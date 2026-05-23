@@ -12,7 +12,7 @@ Baseline: `ai@7.0.0-canary.152`, upstream commit `9f1e1ba4b93b514f6cca1c8452e6a1
 - Stable include controls for request/response bodies and raw chunks, with `IncludeRawChunks` kept as a compatibility alias.
 - `RefineToolInput`, tool metadata fields, canonical file tool-result fields, sandbox plumbing, no chunk telemetry event emission, and step performance fields.
 - Official Anthropic provider package under `packages/anthropic`.
-- Community connector boundary under `community/`, with initial OpenRouter chat/embedding connector.
+- Community connector boundary under `packages/community/`, with initial OpenRouter chat/embedding connector.
 - Bedrock replay updates for signed reasoning, cache-point preservation, and file tool-result content.
 - Scoped test parity is complete for ported upstream/community capabilities; see `TEST_PARITY.md`.
 
@@ -21,7 +21,7 @@ Baseline: `ai@7.0.0-canary.152`, upstream commit `9f1e1ba4b93b514f6cca1c8452e6a1
 | Priority | Area | Label | Work item | Done when |
 | --- | --- | --- | --- | --- |
 | P1 | `packages/anthropic` | feature | Add Anthropic files/skills APIs and concrete sandbox-backed native tool helpers. | File/skill upload APIs and bash/code execution provider tools can use the configured Go sandbox. |
-| P1 | `community/openrouter` | fixture-needed | Broaden OpenRouter coverage beyond the ported-surface gate. | Anthropic-routed prompt caching, provider routing preferences, usage/cost/debug metadata, and error responses have fixture tests. |
+| P1 | `packages/community/openrouter` | fixture-needed | Broaden OpenRouter coverage beyond the ported-surface gate. | Anthropic-routed prompt caching, provider routing preferences, usage/cost/debug metadata, and error responses have fixture tests. |
 | P1 | `tool-result` / files | behavior | Download file URL tool outputs when the target model cannot consume the URL directly. | File URL outputs use the existing download hook and model supported-URL map before being replayed as tool results. |
 | P1 | `tool` / streaming / UI | behavior | Thread `ToolMetadata` through every UI conversion and persisted stream shape. | Tool metadata from model stream parts survives into `ToolCall`, `StreamPart`, UI message parts, callbacks, and generated response messages. |
 | P1 | `sandbox` | behavior | Add concrete sandbox-backed provider tool helpers for Anthropic. | Bash/code execution provider tools can receive the configured Go sandbox and have tests for read/write/run-command calls. |

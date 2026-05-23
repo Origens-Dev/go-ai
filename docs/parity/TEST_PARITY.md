@@ -12,7 +12,7 @@ Upstream reference: Vercel AI SDK `main` at `9f1e1ba4b93b514f6cca1c8452e6a1fb23e
 | `packages/bedrock` text/Converse provider | 10 | 10 | 100.0% |
 | `packages/vertex` Gemini text provider | 5 | 5 | 100.0% |
 | `packages/anthropic` Messages text provider | 8 | 8 | 100.0% |
-| `community/openrouter` chat/embedding connector | 3 | 3 | 100.0% |
+| `packages/community/openrouter` chat/embedding connector | 3 | 3 | 100.0% |
 | **Total** | **108** | **108** | **100.0%** |
 
 The total is the release gate: current scoped test parity is complete for the upstream/community surfaces that have Go implementations in this repo.
@@ -43,7 +43,7 @@ Current Go test files added or expanded for parity:
 - `packages/ai/tool_parity_test.go`
 - `packages/ai/include_telemetry_parity_test.go`
 - `packages/anthropic/anthropic_test.go`
-- `community/openrouter/openrouter_test.go`
+- `packages/community/openrouter/openrouter_test.go`
 - `packages/bedrock/bedrock_test.go`
 
 Verification command:

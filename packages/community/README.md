@@ -10,4 +10,4 @@ Each connector in this directory should:
 - expose idiomatic Go settings for API keys, base URLs, headers, and custom HTTP clients;
 - preserve provider metadata when the remote API exposes useful routing, usage, cost, or debug details.
 
-The initial community connector is `community/openrouter`.
+The initial community connector is `packages/community/openrouter`.

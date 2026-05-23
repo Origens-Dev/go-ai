@@ -1,6 +1,6 @@
 # OpenRouter Community Provider
 
-`community/openrouter` implements OpenRouter as a community connector.
+`packages/community/openrouter` implements OpenRouter as a community connector.
 
 ```go
 provider := openrouter.New(openrouter.Settings{

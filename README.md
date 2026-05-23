@@ -6,7 +6,7 @@ A Go port of Vercel's AI SDK, with the public surface organized under `packages/
 - `packages/anthropic`: Anthropic Messages provider.
 - `packages/bedrock`: Amazon Bedrock Converse provider.
 - `packages/vertex`: Google Vertex AI Gemini provider.
-- `community/openrouter`: OpenRouter community connector for chat and embeddings.
+- `packages/community/openrouter`: OpenRouter community connector for chat and embeddings.
 
 ## Parity Tracking
 
@@ -89,7 +89,7 @@ OpenRouter community auth uses an explicit API key or `OPENROUTER_API_KEY`.
 
 ## Provider Boundaries
 
-First-class providers live under `packages/` and are included in parity tracking with the upstream AI SDK provider packages. Community connectors live under `community/`; they use the same core interfaces and include tests/docs, but have a lighter maintenance promise because their upstream package ownership and release cadence are outside Vercel AI SDK.
+First-class providers live directly under `packages/` and are included in parity tracking with the upstream AI SDK provider packages. Community connectors live under `packages/community/`; they use the same core interfaces and include tests/docs, but have a lighter maintenance promise because their upstream package ownership and release cadence are outside Vercel AI SDK.
 
 ## License
 

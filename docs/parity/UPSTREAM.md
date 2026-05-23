@@ -23,7 +23,7 @@ Primary scope:
 
 Community-provider comparison scope:
 
-- OpenRouter's community AI SDK provider repository, used as the behavioral reference for `community/openrouter`
+- OpenRouter's community AI SDK provider repository, used as the behavioral reference for `packages/community/openrouter`
 
 The high-signal upstream delta since the prior canary.121 automation baseline is concentrated in core `packages/ai`: primary `instructions`, accumulated result/final-step semantics, prepare-step carry-forward, request/response inclusion defaults, sandbox plumbing, tool metadata, step performance metrics, stable tool execution callbacks, telemetry event shape changes, and `ToolLoopAgent.allowSystemInMessages`.
 
@@ -33,7 +33,7 @@ Current Go implementation scope:
 - `packages/anthropic`
 - `packages/bedrock`
 - `packages/vertex`
-- `community/openrouter`
+- `packages/community/openrouter`
 - `internal/httputil`
 - `internal/retry`
 - `packages/bedrock/internal/sigv4`
