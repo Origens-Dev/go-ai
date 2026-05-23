@@ -13,6 +13,7 @@ type ToolCall struct {
 	Dynamic          bool
 	Invalid          bool
 	Error            error
+	ToolMetadata     ProviderMetadata
 	ProviderMetadata ProviderMetadata
 }
 
@@ -20,6 +21,7 @@ type ToolExecutionOptions struct {
 	ToolCallID string
 	Messages   []Message
 	Context    any
+	Sandbox    Sandbox
 }
 
 type ToolApprovalOptions struct {
@@ -54,6 +56,7 @@ type Tool struct {
 	Strict           *bool
 	ProviderOptions  ProviderOptions
 	ProviderMetadata ProviderMetadata
+	ToolMetadata     ProviderMetadata
 	Type             string
 	ID               string
 	Args             any
@@ -64,6 +67,15 @@ type Tool struct {
 	RequiresApproval bool
 	NeedsApproval    func(context.Context, ToolCall) (ApprovalDecision, error)
 }
+
+type ToolInputRefineOptions struct {
+	ToolCall ToolCall
+	Tool     Tool
+	Messages []Message
+	Context  any
+}
+
+type ToolInputRefineFunc func(context.Context, ToolInputRefineOptions) (any, error)
 
 const (
 	ApprovalDecisionApproved      = "approved"
@@ -169,13 +181,15 @@ func (t Tool) toModelTool(name string) ModelTool {
 			InputExamples:   t.InputExamples,
 			Strict:          t.Strict,
 			ProviderOptions: t.ProviderOptions,
+			ToolMetadata:    t.ToolMetadata,
 		}
 	}
 	return ModelTool{
-		Type: "provider",
-		Name: name,
-		ID:   t.ID,
-		Args: t.Args,
+		Type:         "provider",
+		Name:         name,
+		ID:           t.ID,
+		Args:         t.Args,
+		ToolMetadata: t.ToolMetadata,
 	}
 }
 

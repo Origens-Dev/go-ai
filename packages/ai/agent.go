@@ -13,6 +13,7 @@ type Agent interface {
 }
 
 type AgentCallOptions struct {
+	Instructions          string
 	Prompt                string
 	Messages              []Message
 	Options               any
@@ -26,6 +27,7 @@ type AgentCallOptions struct {
 	MaxRetries            *int
 	Timeout               TimeoutConfig
 	Headers               map[string]string
+	Include               IncludeConfig
 	ProviderOptions       ProviderOptions
 	MaxOutputTokens       *int
 	Temperature           *float64
@@ -39,7 +41,9 @@ type AgentCallOptions struct {
 	Download              DownloadFunction
 	Output                *OutputStrategy
 	ResponseFormat        *ResponseFormat
+	Sandbox               Sandbox
 	PrepareStep           func(PrepareStepOptions) (*PrepareStepResult, error)
+	RefineToolInput       ToolInputRefineFunc
 	Telemetry             Telemetry
 	OnStart               func(StartEvent)
 	OnToolExecutionStart  func(ToolExecutionStartEvent)
@@ -69,6 +73,7 @@ type ToolLoopAgentSettings struct {
 	MaxRetries           *int
 	Timeout              TimeoutConfig
 	Headers              map[string]string
+	Include              IncludeConfig
 	ProviderOptions      ProviderOptions
 	MaxOutputTokens      *int
 	Temperature          *float64
@@ -82,7 +87,9 @@ type ToolLoopAgentSettings struct {
 	Download             DownloadFunction
 	Output               *OutputStrategy
 	ResponseFormat       *ResponseFormat
+	Sandbox              Sandbox
 	PrepareStep          func(PrepareStepOptions) (*PrepareStepResult, error)
+	RefineToolInput      ToolInputRefineFunc
 	Telemetry            Telemetry
 	Transforms           []StreamTransform
 	OnStart              func(StartEvent)
@@ -100,6 +107,7 @@ type AgentPrepareCallOptions struct {
 }
 
 type AgentPreparedCall struct {
+	Instructions          *string
 	System                *string
 	Prompt                *string
 	Messages              []Message
@@ -114,6 +122,7 @@ type AgentPreparedCall struct {
 	MaxRetries            *int
 	Timeout               *TimeoutConfig
 	Headers               map[string]string
+	Include               *IncludeConfig
 	ProviderOptions       ProviderOptions
 	MaxOutputTokens       *int
 	Temperature           *float64
@@ -127,7 +136,9 @@ type AgentPreparedCall struct {
 	Download              DownloadFunction
 	Output                *OutputStrategy
 	ResponseFormat        *ResponseFormat
+	Sandbox               Sandbox
 	PrepareStep           func(PrepareStepOptions) (*PrepareStepResult, error)
+	RefineToolInput       ToolInputRefineFunc
 	Telemetry             Telemetry
 	Transforms            []StreamTransform
 }
@@ -165,6 +176,7 @@ func (a *ToolLoopAgent) Generate(ctx context.Context, opts AgentCallOptions) (*G
 	}
 	return GenerateText(ctx, GenerateTextOptions{
 		Model:                 call.Model,
+		Instructions:          call.Instructions,
 		System:                call.System,
 		Prompt:                call.Prompt,
 		Messages:              call.Messages,
@@ -178,6 +190,7 @@ func (a *ToolLoopAgent) Generate(ctx context.Context, opts AgentCallOptions) (*G
 		MaxRetries:            call.MaxRetries,
 		Timeout:               call.Timeout,
 		Headers:               call.Headers,
+		Include:               call.Include,
 		ProviderOptions:       call.ProviderOptions,
 		MaxOutputTokens:       call.MaxOutputTokens,
 		Temperature:           call.Temperature,
@@ -191,7 +204,9 @@ func (a *ToolLoopAgent) Generate(ctx context.Context, opts AgentCallOptions) (*G
 		Download:              call.Download,
 		Output:                call.Output,
 		ResponseFormat:        call.ResponseFormat,
+		Sandbox:               call.Sandbox,
 		PrepareStep:           call.PrepareStep,
+		RefineToolInput:       call.RefineToolInput,
 		Telemetry:             call.Telemetry,
 		OnStart:               mergeStartCallbacks(a.settings.OnStart, opts.OnStart),
 		OnToolExecutionStart:  mergeToolExecutionStartCallbacks(a.settings.OnToolExecutionStart, opts.OnToolExecutionStart),
@@ -210,6 +225,7 @@ func (a *ToolLoopAgent) Stream(ctx context.Context, opts AgentStreamOptions) (*S
 	return StreamText(ctx, StreamTextOptions{
 		GenerateTextOptions: GenerateTextOptions{
 			Model:                 call.Model,
+			Instructions:          call.Instructions,
 			System:                call.System,
 			Prompt:                call.Prompt,
 			Messages:              call.Messages,
@@ -223,6 +239,7 @@ func (a *ToolLoopAgent) Stream(ctx context.Context, opts AgentStreamOptions) (*S
 			MaxRetries:            call.MaxRetries,
 			Timeout:               call.Timeout,
 			Headers:               call.Headers,
+			Include:               call.Include,
 			ProviderOptions:       call.ProviderOptions,
 			MaxOutputTokens:       call.MaxOutputTokens,
 			Temperature:           call.Temperature,
@@ -236,7 +253,9 @@ func (a *ToolLoopAgent) Stream(ctx context.Context, opts AgentStreamOptions) (*S
 			Download:              call.Download,
 			Output:                call.Output,
 			ResponseFormat:        call.ResponseFormat,
+			Sandbox:               call.Sandbox,
 			PrepareStep:           call.PrepareStep,
+			RefineToolInput:       call.RefineToolInput,
 			Telemetry:             call.Telemetry,
 			OnStart:               mergeStartCallbacks(a.settings.OnStart, opts.OnStart),
 			OnToolExecutionStart:  mergeToolExecutionStartCallbacks(a.settings.OnToolExecutionStart, opts.OnToolExecutionStart),
@@ -252,6 +271,7 @@ func (a *ToolLoopAgent) Stream(ctx context.Context, opts AgentStreamOptions) (*S
 }
 
 type preparedAgentCall struct {
+	Instructions          string
 	System                string
 	Prompt                string
 	Messages              []Message
@@ -265,6 +285,7 @@ type preparedAgentCall struct {
 	MaxRetries            *int
 	Timeout               TimeoutConfig
 	Headers               map[string]string
+	Include               IncludeConfig
 	ProviderOptions       ProviderOptions
 	MaxOutputTokens       *int
 	Temperature           *float64
@@ -278,7 +299,9 @@ type preparedAgentCall struct {
 	Download              DownloadFunction
 	Output                *OutputStrategy
 	ResponseFormat        *ResponseFormat
+	Sandbox               Sandbox
 	PrepareStep           func(PrepareStepOptions) (*PrepareStepResult, error)
+	RefineToolInput       ToolInputRefineFunc
 	Telemetry             Telemetry
 	Transforms            []StreamTransform
 }
@@ -289,7 +312,7 @@ func (a *ToolLoopAgent) prepareCall(opts AgentCallOptions) (preparedAgentCall, e
 	}
 	settings := a.settings
 	call := preparedAgentCall{
-		System:                settings.Instructions,
+		Instructions:          firstString(opts.Instructions, settings.Instructions),
 		Prompt:                opts.Prompt,
 		Messages:              opts.Messages,
 		AllowSystemInMessages: opts.AllowSystemInMessages,
@@ -302,6 +325,7 @@ func (a *ToolLoopAgent) prepareCall(opts AgentCallOptions) (preparedAgentCall, e
 		MaxRetries:            firstIntPtr(opts.MaxRetries, settings.MaxRetries),
 		Timeout:               firstTimeout(opts.Timeout, settings.Timeout),
 		Headers:               mergeStringMaps(settings.Headers, opts.Headers),
+		Include:               firstInclude(opts.Include, settings.Include),
 		ProviderOptions:       mergeProviderOptions(cloneProviderOptions(settings.ProviderOptions), opts.ProviderOptions),
 		MaxOutputTokens:       firstIntPtr(opts.MaxOutputTokens, settings.MaxOutputTokens),
 		Temperature:           firstFloatPtr(opts.Temperature, settings.Temperature),
@@ -315,7 +339,9 @@ func (a *ToolLoopAgent) prepareCall(opts AgentCallOptions) (preparedAgentCall, e
 		Download:              firstDownload(opts.Download, settings.Download),
 		Output:                firstOutputStrategy(opts.Output, settings.Output),
 		ResponseFormat:        firstResponseFormat(opts.ResponseFormat, settings.ResponseFormat),
+		Sandbox:               firstSandbox(opts.Sandbox, settings.Sandbox),
 		PrepareStep:           firstPrepareStep(opts.PrepareStep, settings.PrepareStep),
+		RefineToolInput:       firstRefineToolInput(opts.RefineToolInput, settings.RefineToolInput),
 		Telemetry:             firstTelemetry(opts.Telemetry, settings.Telemetry),
 		Transforms:            settings.Transforms,
 	}
@@ -347,6 +373,9 @@ func applyPreparedAgentCall(call *preparedAgentCall, prepared *AgentPreparedCall
 	}
 	if prepared.System != nil {
 		call.System = *prepared.System
+	}
+	if prepared.Instructions != nil {
+		call.Instructions = *prepared.Instructions
 	}
 	if prepared.Prompt != nil {
 		call.Prompt = *prepared.Prompt
@@ -384,6 +413,9 @@ func applyPreparedAgentCall(call *preparedAgentCall, prepared *AgentPreparedCall
 		call.Timeout = *prepared.Timeout
 	}
 	call.Headers = mergeStringMaps(call.Headers, prepared.Headers)
+	if prepared.Include != nil {
+		call.Include = *prepared.Include
+	}
 	call.ProviderOptions = mergeProviderOptions(call.ProviderOptions, prepared.ProviderOptions)
 	if prepared.MaxOutputTokens != nil {
 		call.MaxOutputTokens = prepared.MaxOutputTokens
@@ -421,8 +453,14 @@ func applyPreparedAgentCall(call *preparedAgentCall, prepared *AgentPreparedCall
 	if prepared.ResponseFormat != nil {
 		call.ResponseFormat = prepared.ResponseFormat
 	}
+	if prepared.Sandbox != nil {
+		call.Sandbox = prepared.Sandbox
+	}
 	if prepared.PrepareStep != nil {
 		call.PrepareStep = prepared.PrepareStep
+	}
+	if prepared.RefineToolInput != nil {
+		call.RefineToolInput = prepared.RefineToolInput
 	}
 	if prepared.Telemetry != nil {
 		call.Telemetry = prepared.Telemetry
@@ -511,6 +549,33 @@ func firstTimeout(values ...TimeoutConfig) TimeoutConfig {
 		}
 	}
 	return TimeoutConfig{}
+}
+
+func firstInclude(values ...IncludeConfig) IncludeConfig {
+	for _, value := range values {
+		if value.RequestBody || value.ResponseBody || value.RequestMessages || value.RawChunks {
+			return value
+		}
+	}
+	return IncludeConfig{}
+}
+
+func firstSandbox(values ...Sandbox) Sandbox {
+	for _, value := range values {
+		if value != nil {
+			return value
+		}
+	}
+	return nil
+}
+
+func firstRefineToolInput(values ...ToolInputRefineFunc) ToolInputRefineFunc {
+	for _, value := range values {
+		if value != nil {
+			return value
+		}
+	}
+	return nil
 }
 
 func mergeStringMaps(base, override map[string]string) map[string]string {

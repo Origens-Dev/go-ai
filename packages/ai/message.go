@@ -101,6 +101,7 @@ type ToolCallPart struct {
 	Invalid          bool
 	Error            error
 	Title            string
+	ToolMetadata     ProviderMetadata
 	ProviderMetadata ProviderMetadata
 	ProviderOptions  ProviderOptions
 }
@@ -122,8 +123,16 @@ func (p ToolCallPart) InputJSON() string {
 type ToolResultOutput struct {
 	Type            string
 	Value           any
+	Files           []ToolResultFile
 	Reason          string
 	ProviderOptions ProviderOptions
+}
+
+type ToolResultFile struct {
+	Data      []byte
+	URL       string
+	MediaType string
+	Filename  string
 }
 
 type ToolResultPart struct {
@@ -136,6 +145,7 @@ type ToolResultPart struct {
 	ProviderExecuted bool
 	Dynamic          bool
 	Preliminary      bool
+	ToolMetadata     ProviderMetadata
 	ProviderMetadata ProviderMetadata
 	ProviderOptions  ProviderOptions
 }

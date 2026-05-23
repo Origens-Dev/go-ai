@@ -8,14 +8,14 @@ import (
 )
 
 func TestStandardizePromptRejectsInvalidMessageRole(t *testing.T) {
-	_, err := standardizePrompt("", "", []Message{{Role: Role("developer"), Text: "debug"}}, false)
+	_, err := standardizePrompt("", "", "", []Message{{Role: Role("developer"), Text: "debug"}}, false)
 	if !errors.Is(err, ErrInvalidMessageRole) || !IsInvalidMessageRoleError(err) {
 		t.Fatalf("expected invalid message role error, got %v", err)
 	}
 }
 
 func TestStandardizePromptRejectsSystemMessageParts(t *testing.T) {
-	_, err := standardizePrompt("", "", []Message{{
+	_, err := standardizePrompt("", "", "", []Message{{
 		Role:    RoleSystem,
 		Content: []Part{TextPart{Text: "instructions"}},
 	}}, true)
@@ -25,7 +25,7 @@ func TestStandardizePromptRejectsSystemMessageParts(t *testing.T) {
 }
 
 func TestStandardizePromptValidatesFilePartContract(t *testing.T) {
-	_, err := standardizePrompt("", "", []Message{{
+	_, err := standardizePrompt("", "", "", []Message{{
 		Role: RoleUser,
 		Content: []Part{FilePart{
 			Data: FileData{Type: FileDataTypeURL, URL: "https://example.com/file.pdf"},
@@ -35,7 +35,7 @@ func TestStandardizePromptValidatesFilePartContract(t *testing.T) {
 		t.Fatalf("expected invalid prompt for missing media type, got %v", err)
 	}
 
-	_, err = standardizePrompt("", "", []Message{{
+	_, err = standardizePrompt("", "", "", []Message{{
 		Role: RoleUser,
 		Content: []Part{FilePart{
 			Data:      FileData{Type: FileDataTypeReference, ProviderReference: ProviderReference{"openai": "file-123"}},
@@ -48,7 +48,7 @@ func TestStandardizePromptValidatesFilePartContract(t *testing.T) {
 }
 
 func TestStandardizePromptRejectsUnsupportedToolMessagePart(t *testing.T) {
-	_, err := standardizePrompt("", "", []Message{{
+	_, err := standardizePrompt("", "", "", []Message{{
 		Role:    RoleTool,
 		Content: []Part{TextPart{Text: "not a tool result"}},
 	}}, false)
@@ -80,7 +80,7 @@ func TestStandardizePromptRejectsInvalidToolCallAndResultParts(t *testing.T) {
 		{Role: RoleTool, Content: []Part{ToolResultPart{ToolName: "weather"}}},
 	}
 	for _, message := range cases {
-		if _, err := standardizePrompt("", "", []Message{message}, true); !errors.Is(err, ErrInvalidPrompt) {
+		if _, err := standardizePrompt("", "", "", []Message{message}, true); !errors.Is(err, ErrInvalidPrompt) {
 			t.Fatalf("expected invalid prompt for %#v, got %v", message, err)
 		}
 	}

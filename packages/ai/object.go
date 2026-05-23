@@ -35,6 +35,7 @@ func GenerateObject(ctx context.Context, opts GenerateObjectOptions) (objectResu
 	}
 	result, err := GenerateText(ctx, GenerateTextOptions{
 		Model:                 opts.Model,
+		Instructions:          opts.Instructions,
 		System:                opts.System,
 		Prompt:                opts.Prompt,
 		Messages:              opts.Messages,
@@ -114,6 +115,7 @@ func StreamObject(ctx context.Context, opts StreamObjectOptions) (*StreamObjectR
 	stream, err := StreamText(ctx, StreamTextOptions{
 		GenerateTextOptions: GenerateTextOptions{
 			Model:                 opts.Model,
+			Instructions:          opts.Instructions,
 			System:                opts.System,
 			Prompt:                opts.Prompt,
 			Messages:              opts.Messages,

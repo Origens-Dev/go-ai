@@ -13,7 +13,7 @@ type standardizedPrompt struct {
 	Messages []Message
 }
 
-func standardizePrompt(system string, prompt string, messages []Message, allowSystemInMessages bool) (standardizedPrompt, error) {
+func standardizePrompt(instructions string, system string, prompt string, messages []Message, allowSystemInMessages bool) (standardizedPrompt, error) {
 	if strings.TrimSpace(prompt) == "" && len(messages) == 0 {
 		return standardizedPrompt{}, &SDKError{Kind: ErrInvalidPrompt, Message: "prompt or messages must be defined"}
 	}
@@ -31,10 +31,13 @@ func standardizePrompt(system string, prompt string, messages []Message, allowSy
 			return standardizedPrompt{}, err
 		}
 		if message.Role == RoleSystem && !allowSystemInMessages {
-			return standardizedPrompt{}, &SDKError{Kind: ErrInvalidPrompt, Message: "System messages are not allowed in the prompt or messages fields. Use the system option instead."}
+			return standardizedPrompt{}, &SDKError{Kind: ErrInvalidPrompt, Message: "System messages are not allowed in the prompt or messages fields. Use the instructions option instead."}
 		}
 	}
 	var sys []Message
+	if strings.TrimSpace(instructions) != "" {
+		sys = append(sys, SystemMessage(instructions))
+	}
 	if strings.TrimSpace(system) != "" {
 		sys = append(sys, SystemMessage(system))
 	}
