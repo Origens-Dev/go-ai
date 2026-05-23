@@ -215,6 +215,148 @@ func TestDoGenerateMapsMessageTextWhenContentIsEmpty(t *testing.T) {
 	}
 }
 
+func TestToolResultFileOutputMapsToBedrockContent(t *testing.T) {
+	client := &captureClient{response: `{
+		"output":{"message":{"content":[{"text":"ok"}]}},
+		"stopReason":"end_turn"
+	}`}
+	provider := New(Settings{Region: "us-east-1", APIKey: "token", Client: client})
+	_, err := provider.LanguageModel("amazon.nova-lite-v1:0").DoGenerate(context.Background(), ai.LanguageModelCallOptions{
+		Prompt: []ai.Message{
+			ai.AssistantMessage("need file"),
+			ai.ToolMessage(ai.ToolResultPart{
+				ToolCallID: "call-1",
+				ToolName:   "make_file",
+				Output: ai.ToolResultOutput{Files: []ai.ToolResultFile{{
+					Data:      []byte("hello"),
+					MediaType: "text/plain",
+					Filename:  "hello.txt",
+				}}},
+			}),
+		},
+	})
+	if err != nil {
+		t.Fatalf("DoGenerate failed: %v", err)
+	}
+	var body struct {
+		Messages []struct {
+			Content []map[string]any `json:"content"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal(client.body, &body); err != nil {
+		t.Fatal(err)
+	}
+	toolResult := body.Messages[1].Content[0]["toolResult"].(map[string]any)
+	content := toolResult["content"].([]any)
+	if _, ok := content[0].(map[string]any)["document"]; !ok {
+		t.Fatalf("expected document file content, got %#v", content)
+	}
+}
+
+func TestSignedReasoningRoundTripsAndUnsignedReasoningIsSkipped(t *testing.T) {
+	client := &captureClient{response: `{
+		"output":{"message":{"content":[{"text":"ok"}]}},
+		"stopReason":"end_turn"
+	}`}
+	provider := New(Settings{Region: "us-east-1", APIKey: "token", Client: client})
+	_, err := provider.LanguageModel("anthropic.claude-3-haiku-20240307-v1:0").DoGenerate(context.Background(), ai.LanguageModelCallOptions{
+		Prompt: []ai.Message{{
+			Role: ai.RoleAssistant,
+			Content: []ai.Part{
+				ai.ReasoningPart{Text: "skip unsigned"},
+				ai.ReasoningPart{Text: "keep signed", ProviderMetadata: ai.ProviderMetadata{"bedrock": map[string]any{"signature": "sig"}}},
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("DoGenerate failed: %v", err)
+	}
+	var body struct {
+		Messages []struct {
+			Content []map[string]any `json:"content"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal(client.body, &body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body.Messages[0].Content) != 1 {
+		t.Fatalf("expected only signed reasoning, got %#v", body.Messages[0].Content)
+	}
+	reasoning := body.Messages[0].Content[0]["reasoningContent"].(map[string]any)["reasoningText"].(map[string]any)
+	if reasoning["text"] != "keep signed" || reasoning["signature"] != "sig" {
+		t.Fatalf("unexpected reasoning payload: %#v", reasoning)
+	}
+}
+
+func TestTextCachePointProviderOptionMapsToBedrockContent(t *testing.T) {
+	client := &captureClient{response: `{
+		"output":{"message":{"content":[{"text":"ok"}]}},
+		"stopReason":"end_turn"
+	}`}
+	provider := New(Settings{Region: "us-east-1", APIKey: "token", Client: client})
+	_, err := provider.LanguageModel("anthropic.claude-3-haiku-20240307-v1:0").DoGenerate(context.Background(), ai.LanguageModelCallOptions{
+		Prompt: []ai.Message{{
+			Role: ai.RoleAssistant,
+			Content: []ai.Part{ai.TextPart{
+				Text: "cached assistant text",
+				ProviderOptions: ai.ProviderOptions{
+					"bedrock": map[string]any{"cachePoint": map[string]any{"type": "default"}},
+				},
+			}},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("DoGenerate failed: %v", err)
+	}
+	var body struct {
+		Messages []struct {
+			Content []map[string]any `json:"content"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal(client.body, &body); err != nil {
+		t.Fatal(err)
+	}
+	cachePoint := body.Messages[0].Content[0]["cachePoint"].(map[string]any)
+	if cachePoint["type"] != "default" {
+		t.Fatalf("unexpected cache point: %#v", cachePoint)
+	}
+}
+
+func TestToolResultErrorStatusMapsToBedrockToolResult(t *testing.T) {
+	client := &captureClient{response: `{
+		"output":{"message":{"content":[{"text":"ok"}]}},
+		"stopReason":"end_turn"
+	}`}
+	provider := New(Settings{Region: "us-east-1", APIKey: "token", Client: client})
+	_, err := provider.LanguageModel("amazon.nova-lite-v1:0").DoGenerate(context.Background(), ai.LanguageModelCallOptions{
+		Prompt: []ai.Message{ai.ToolMessage(ai.ToolResultPart{
+			ToolCallID: "call-1",
+			ToolName:   "dangerous",
+			IsError:    true,
+			Output:     ai.ToolResultOutput{Type: "error-text", Value: "denied"},
+		})},
+	})
+	if err != nil {
+		t.Fatalf("DoGenerate failed: %v", err)
+	}
+	var body struct {
+		Messages []struct {
+			Content []map[string]any `json:"content"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal(client.body, &body); err != nil {
+		t.Fatal(err)
+	}
+	toolResult := body.Messages[0].Content[0]["toolResult"].(map[string]any)
+	if toolResult["status"] != "error" {
+		t.Fatalf("expected error tool result status, got %#v", toolResult)
+	}
+	content := toolResult["content"].([]any)
+	if got := content[0].(map[string]any)["text"]; got != "denied" {
+		t.Fatalf("unexpected tool result text: %#v", content)
+	}
+}
+
 func TestDoStreamDecodesBedrockEventStreamFrames(t *testing.T) {
 	var stream bytes.Buffer
 	encoder := eventstream.NewEncoder()

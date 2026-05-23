@@ -28,7 +28,7 @@ func GenerateText(ctx context.Context, opts GenerateTextOptions) (result *Genera
 		defer cancel()
 	}
 
-	initialPrompt, err := standardizePrompt(opts.System, opts.Prompt, opts.Messages, opts.AllowSystemInMessages)
+	initialPrompt, err := standardizePrompt(opts.Instructions, opts.System, opts.Prompt, opts.Messages, opts.AllowSystemInMessages)
 	if err != nil {
 		return nil, err
 	}
@@ -43,6 +43,7 @@ func GenerateText(ctx context.Context, opts GenerateTextOptions) (result *Genera
 
 	responseMessages := []Message{}
 	steps := []*StepResult{}
+	currentMessages := append([]Message{}, initialPrompt.Messages...)
 	var last *StepResult
 	var clientToolCalls []ToolCall
 	var clientToolResults []ToolResultPart
@@ -60,11 +61,13 @@ func GenerateText(ctx context.Context, opts GenerateTextOptions) (result *Genera
 		}
 
 		stepNumber := len(steps)
+		stepStarted := time.Now()
 		stepID := defaultStepID(stepNumber)
 		stepType := defaultStepType(stepNumber)
 		model := opts.Model
+		instructions := opts.Instructions
 		system := opts.System
-		stepMessages := append([]Message{}, initialPrompt.Messages...)
+		stepMessages := append([]Message{}, currentMessages...)
 		stepTools := opts.Tools
 		if len(opts.ActiveTools) > 0 {
 			stepTools = FilterActiveTools(stepTools, opts.ActiveTools)
@@ -77,10 +80,13 @@ func GenerateText(ctx context.Context, opts GenerateTextOptions) (result *Genera
 		if opts.PrepareStep != nil {
 			prepared, err := opts.PrepareStep(PrepareStepOptions{
 				Model:        model,
+				Instructions: instructions,
+				System:       system,
 				Steps:        steps,
 				StepNumber:   stepNumber,
 				Messages:     append(stepMessages, responseMessages...),
 				ToolsContext: cloneAnyMap(toolsContext),
+				Sandbox:      opts.Sandbox,
 			})
 			if err != nil {
 				return nil, err
@@ -89,11 +95,15 @@ func GenerateText(ctx context.Context, opts GenerateTextOptions) (result *Genera
 				if prepared.Model != nil {
 					model = prepared.Model
 				}
+				if prepared.Instructions != "" {
+					instructions = prepared.Instructions
+				}
 				if prepared.System != "" {
 					system = prepared.System
 				}
 				if prepared.Messages != nil {
-					stepMessages = prepared.Messages
+					currentMessages = append([]Message{}, prepared.Messages...)
+					stepMessages = append([]Message{}, currentMessages...)
 				}
 				if prepared.Tools != nil {
 					stepTools = prepared.Tools
@@ -103,6 +113,9 @@ func GenerateText(ctx context.Context, opts GenerateTextOptions) (result *Genera
 				}
 				providerOptions = mergeProviderOptions(providerOptions, prepared.ProviderOptions)
 				toolsContext = mergeToolsContext(toolsContext, prepared.ToolsContext)
+				if prepared.Sandbox != nil {
+					opts.Sandbox = prepared.Sandbox
+				}
 			}
 		}
 		if err := validatePreparedTools(stepTools, nil, toolChoice); err != nil {
@@ -117,7 +130,7 @@ func GenerateText(ctx context.Context, opts GenerateTextOptions) (result *Genera
 			conversionOptions.Download = opts.Download
 		}
 		promptMessages, err := toLanguageModelPromptWithOptions(stepCtx, standardizedPrompt{
-			System:   systemMessages(system, initialPrompt.System),
+			System:   systemMessagesFor(instructions, system, initialPrompt.System),
 			Messages: stepMessages,
 		}, responseMessages, conversionOptions)
 		if err != nil {
@@ -159,12 +172,16 @@ func GenerateText(ctx context.Context, opts GenerateTextOptions) (result *Genera
 			return nil, &SDKError{Kind: ErrNoOutputGenerated, Message: "model returned nil result"}
 		}
 		emitLanguageModelCallEnd(ctx, opts.Telemetry, opts.TelemetryOptions, OperationGenerateText, model, stepNumber, callID, modelResult)
+		responseFinished := time.Now()
 
 		toolCalls, parsedContent, err := parseToolCalls(stepCtx, modelResult.Content, parseToolCallsOptions{
-			Tools:          stepTools,
-			RepairToolCall: opts.RepairToolCall,
-			System:         system,
-			Messages:       promptMessages,
+			Tools:           stepTools,
+			RepairToolCall:  opts.RepairToolCall,
+			RefineToolInput: opts.RefineToolInput,
+			System:          system,
+			Instructions:    instructions,
+			Messages:        promptMessages,
+			ToolsContext:    cloneAnyMap(toolsContext),
 		})
 		if err != nil {
 			return nil, err
@@ -205,7 +222,8 @@ func GenerateText(ctx context.Context, opts GenerateTextOptions) (result *Genera
 			}
 		}
 
-		clientToolResults = executeToolCalls(stepCtx, clientToolCalls, stepTools, promptMessages, cloneAnyMap(toolsContext), opts.Timeout.Tool, opts.ToolExecution, blocked, precomputedToolResults, opts.OnToolExecutionStart, opts.OnToolExecutionEnd)
+		clientToolResults = executeToolCalls(stepCtx, clientToolCalls, stepTools, promptMessages, cloneAnyMap(toolsContext), opts.Sandbox, opts.Timeout.Tool, opts.ToolExecution, blocked, precomputedToolResults, opts.OnToolExecutionStart, opts.OnToolExecutionEnd)
+		toolsFinished := time.Now()
 		for _, part := range parsedContent {
 			if result, ok := part.(ToolResultPart); ok {
 				delete(pendingProviderResults, result.ToolCallID)
@@ -217,9 +235,10 @@ func GenerateText(ctx context.Context, opts GenerateTextOptions) (result *Genera
 			stepContent = append(stepContent, result)
 		}
 
-		responseMessages = append(responseMessages, toResponseMessages(parsedContent, clientToolResults)...)
+		stepResponseMessages := toResponseMessages(parsedContent, clientToolResults)
+		responseMessages = append(responseMessages, stepResponseMessages...)
 		stepResponse := modelResult.Response
-		stepResponse.Messages = append([]Message{}, responseMessages...)
+		stepResponse.Messages = append([]Message{}, stepResponseMessages...)
 		if stepResponse.ID == "" {
 			stepResponse.ID = fmt.Sprintf("resp-%d", time.Now().UnixNano())
 		}
@@ -242,13 +261,17 @@ func GenerateText(ctx context.Context, opts GenerateTextOptions) (result *Genera
 			FinishReason:     modelResult.FinishReason.Unified,
 			RawFinishReason:  modelResult.FinishReason.Raw,
 			Usage:            modelResult.Usage,
+			Performance:      performanceFromTimings(stepStarted, responseFinished, toolsFinished, modelResult.Usage, 0),
 			Warnings:         modelResult.Warnings,
 			ProviderMetadata: modelResult.ProviderMetadata,
-			Request:          modelResult.Request,
+			Request:          applyIncludeToRequest(modelResult.Request, opts.Include),
 			Response:         stepResponse,
 			ToolCalls:        toolCalls,
 			ToolResults:      clientToolResults,
+			Files:            filesFromParts(stepContent),
+			Sources:          sourcesFromParts(stepContent),
 		}
+		applyIncludeToStep(last, opts.Include)
 		LogWarnings(modelResult.Warnings, model.Provider(), model.ModelID())
 		steps = append(steps, last)
 		emitStepFinish(ctx, opts.Telemetry, opts.TelemetryOptions, opts.OnStepFinish, EventGenerateTextStepFinish, OperationGenerateText, last)
@@ -268,23 +291,37 @@ func GenerateText(ctx context.Context, opts GenerateTextOptions) (result *Genera
 	}
 	totalUsage := Usage{}
 	var warnings []Warning
+	var content []Part
+	var toolCalls []ToolCall
+	var toolResults []ToolResultPart
+	var files []GeneratedFile
+	var sources []SourcePart
 	for _, step := range steps {
 		totalUsage = AddUsage(totalUsage, step.Usage)
 		warnings = append(warnings, step.Warnings...)
+		content = append(content, step.Content...)
+		toolCalls = append(toolCalls, step.ToolCalls...)
+		toolResults = append(toolResults, step.ToolResults...)
+		files = append(files, step.Files...)
+		sources = append(sources, step.Sources...)
 	}
 	result = &GenerateTextResult{
 		Text:             last.Text,
-		Content:          last.Content,
+		Content:          content,
 		FinishReason:     last.FinishReason,
 		RawFinishReason:  last.RawFinishReason,
 		Usage:            totalUsage,
 		Warnings:         warnings,
 		ProviderMetadata: last.ProviderMetadata,
 		Request:          last.Request,
-		Response:         last.Response,
+		Response:         applyIncludeToResponse(last.Response, opts.Include),
 		Steps:            steps,
-		ToolCalls:        last.ToolCalls,
-		ToolResults:      last.ToolResults,
+		ResponseMessages: append([]Message{}, responseMessages...),
+		FinalStep:        last,
+		ToolCalls:        toolCalls,
+		ToolResults:      toolResults,
+		Files:            files,
+		Sources:          sources,
 	}
 	output, outputGenerated, outputErr := parseCompleteTextOutput(opts.Output, result.Text, result.Response, result.Usage, FinishReason{Unified: result.FinishReason, Raw: result.RawFinishReason})
 	result.Output = output
@@ -353,10 +390,13 @@ func normalizeToolChoice(choice ToolChoice) ToolChoice {
 }
 
 type parseToolCallsOptions struct {
-	Tools          map[string]Tool
-	RepairToolCall ToolCallRepairFunc
-	System         string
-	Messages       []Message
+	Tools           map[string]Tool
+	RepairToolCall  ToolCallRepairFunc
+	RefineToolInput ToolInputRefineFunc
+	Instructions    string
+	System          string
+	Messages        []Message
+	ToolsContext    map[string]any
 }
 
 func parseToolCalls(ctx context.Context, parts []Part, opts parseToolCallsOptions) ([]ToolCall, []Part, error) {
@@ -386,17 +426,21 @@ func parseToolCalls(ctx context.Context, parts []Part, opts parseToolCallsOption
 
 func parseToolCall(ctx context.Context, toolPart ToolCallPart, opts parseToolCallsOptions) (ToolCall, *ToolCallPart, error) {
 	call := parseToolCallWithoutRepair(toolPart, opts.Tools)
+	if !call.Invalid {
+		return refineToolCallInput(ctx, call, toolPart, opts)
+	}
 	if !call.Invalid || opts.RepairToolCall == nil || !isRepairableToolCallError(call.Error) {
 		return call, nil, nil
 	}
 
 	repairedPart, err := opts.RepairToolCall(ctx, ToolCallRepairOptions{
-		System:      opts.System,
-		Messages:    append([]Message(nil), opts.Messages...),
-		ToolCall:    toolPart,
-		Tools:       opts.Tools,
-		InputSchema: inputSchemaLookup(opts.Tools),
-		Error:       call.Error,
+		Instructions: opts.Instructions,
+		System:       opts.System,
+		Messages:     append([]Message(nil), opts.Messages...),
+		ToolCall:     toolPart,
+		Tools:        opts.Tools,
+		InputSchema:  inputSchemaLookup(opts.Tools),
+		Error:        call.Error,
 	})
 	if err != nil {
 		return ToolCall{}, nil, NewToolCallRepairError(err, call.Error)
@@ -409,7 +453,14 @@ func parseToolCall(ctx context.Context, toolPart ToolCallPart, opts parseToolCal
 	if repairedCall.Invalid {
 		return call, nil, nil
 	}
-	return repairedCall, repairedPart, nil
+	refinedCall, refinedPart, err := refineToolCallInput(ctx, repairedCall, *repairedPart, opts)
+	if err != nil {
+		return ToolCall{}, nil, err
+	}
+	if refinedPart != nil {
+		return refinedCall, refinedPart, nil
+	}
+	return refinedCall, repairedPart, nil
 }
 
 func parseToolCallWithoutRepair(toolPart ToolCallPart, tools map[string]Tool) ToolCall {
@@ -418,6 +469,7 @@ func parseToolCallWithoutRepair(toolPart ToolCallPart, tools map[string]Tool) To
 		ToolName:         toolPart.ToolName,
 		ProviderExecuted: toolPart.ProviderExecuted,
 		Dynamic:          toolPart.Dynamic,
+		ToolMetadata:     toolPart.ToolMetadata,
 		ProviderMetadata: toolPart.ProviderMetadata,
 	}
 	input := toolPart.Input
@@ -448,6 +500,31 @@ func parseToolCallWithoutRepair(toolPart ToolCallPart, tools map[string]Tool) To
 	return call
 }
 
+func refineToolCallInput(ctx context.Context, call ToolCall, toolPart ToolCallPart, opts parseToolCallsOptions) (ToolCall, *ToolCallPart, error) {
+	if call.Invalid || opts.RefineToolInput == nil {
+		return call, nil, nil
+	}
+	tool, ok := opts.Tools[call.ToolName]
+	if !ok {
+		return call, nil, nil
+	}
+	refined, err := opts.RefineToolInput(ctx, ToolInputRefineOptions{
+		ToolCall: call,
+		Tool:     tool,
+		Messages: append([]Message(nil), opts.Messages...),
+		Context:  cloneAnyMap(opts.ToolsContext),
+	})
+	if err != nil {
+		call.Invalid = true
+		call.Error = &SDKError{Kind: ErrInvalidToolInput, Message: "tool input refinement failed", Cause: err}
+		return call, &toolPart, nil
+	}
+	toolPart.Input = refined
+	toolPart.InputRaw = mustJSON(refined)
+	refinedCall := parseToolCallWithoutRepair(toolPart, opts.Tools)
+	return refinedCall, &toolPart, nil
+}
+
 func isRepairableToolCallError(err error) bool {
 	return IsNoSuchToolError(err) || errors.Is(err, ErrInvalidToolInput)
 }
@@ -474,7 +551,7 @@ func availableToolNames(tools map[string]Tool) []string {
 	return names
 }
 
-func executeTool(ctx context.Context, timeout time.Duration, call ToolCall, tool Tool, messages []Message, toolsContext map[string]any, onStart func(ToolExecutionStartEvent), onEnd func(ToolExecutionEndEvent)) ToolResultPart {
+func executeTool(ctx context.Context, timeout time.Duration, call ToolCall, tool Tool, messages []Message, toolsContext map[string]any, sandbox Sandbox, onStart func(ToolExecutionStartEvent), onEnd func(ToolExecutionEndEvent)) ToolResultPart {
 	execCtx := ctx
 	var cancel context.CancelFunc
 	if timeout > 0 {
@@ -484,7 +561,7 @@ func executeTool(ctx context.Context, timeout time.Duration, call ToolCall, tool
 	if onStart != nil {
 		onStart(ToolExecutionStartEvent{ToolCall: call, Messages: append([]Message(nil), messages...)})
 	}
-	output, err := tool.Execute(execCtx, call, ToolExecutionOptions{ToolCallID: call.ToolCallID, Messages: messages, Context: toolsContext})
+	output, err := tool.Execute(execCtx, call, ToolExecutionOptions{ToolCallID: call.ToolCallID, Messages: messages, Context: toolsContext, Sandbox: sandbox})
 	modelOutput, modelErr := CreateToolModelOutput(tool, call.ToolCallID, call.Input, firstNonNil(output, errString(err)), err != nil)
 	if modelErr != nil {
 		err = modelErr
@@ -498,6 +575,7 @@ func executeTool(ctx context.Context, timeout time.Duration, call ToolCall, tool
 		Result:           output,
 		IsError:          err != nil,
 		Dynamic:          call.Dynamic,
+		ToolMetadata:     call.ToolMetadata,
 		ProviderMetadata: call.ProviderMetadata,
 	}
 	if onEnd != nil {
@@ -506,7 +584,7 @@ func executeTool(ctx context.Context, timeout time.Duration, call ToolCall, tool
 	return result
 }
 
-func executeToolCalls(ctx context.Context, calls []ToolCall, tools map[string]Tool, messages []Message, toolsContext map[string]any, timeout time.Duration, mode ToolExecutionMode, blocked map[string]bool, precomputed map[string]ToolResultPart, onStart func(ToolExecutionStartEvent), onEnd func(ToolExecutionEndEvent)) []ToolResultPart {
+func executeToolCalls(ctx context.Context, calls []ToolCall, tools map[string]Tool, messages []Message, toolsContext map[string]any, sandbox Sandbox, timeout time.Duration, mode ToolExecutionMode, blocked map[string]bool, precomputed map[string]ToolResultPart, onStart func(ToolExecutionStartEvent), onEnd func(ToolExecutionEndEvent)) []ToolResultPart {
 	if len(calls) == 0 {
 		return nil
 	}
@@ -524,7 +602,7 @@ func executeToolCalls(ctx context.Context, calls []ToolCall, tools map[string]To
 			if !ok || tool.Execute == nil || call.Invalid {
 				continue
 			}
-			results = append(results, executeTool(ctx, timeout, call, tool, messages, cloneAnyMap(toolsContext), onStart, onEnd))
+			results = append(results, executeTool(ctx, timeout, call, tool, messages, cloneAnyMap(toolsContext), sandbox, onStart, onEnd))
 		}
 		return results
 	}
@@ -546,7 +624,7 @@ func executeToolCalls(ctx context.Context, calls []ToolCall, tools map[string]To
 		wg.Add(1)
 		go func(index int, call ToolCall, tool Tool) {
 			defer wg.Done()
-			results[index] = executeTool(ctx, timeout, call, tool, messages, cloneAnyMap(toolsContext), onStart, onEnd)
+			results[index] = executeTool(ctx, timeout, call, tool, messages, cloneAnyMap(toolsContext), sandbox, onStart, onEnd)
 		}(index, call, tool)
 	}
 	wg.Wait()

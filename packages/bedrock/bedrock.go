@@ -265,7 +265,7 @@ func bedrockUserContent(parts []ai.Part) []map[string]any {
 				out = append(out, map[string]any{"document": map[string]any{"format": mediaSubtype(p.MediaType), "name": strings.TrimSuffix(name, "."+mediaSubtype(p.MediaType)), "source": map[string]any{"bytes": base64.StdEncoding.EncodeToString(data)}}})
 			}
 		case ai.ToolResultPart:
-			out = append(out, map[string]any{"toolResult": map[string]any{"toolUseId": p.ToolCallID, "content": []map[string]any{{"text": toolOutputText(p.Output)}}}})
+			out = append(out, map[string]any{"toolResult": map[string]any{"toolUseId": p.ToolCallID, "content": bedrockToolResultContent(p.Output), "status": bedrockToolResultStatus(p)}})
 		}
 	}
 	return out
@@ -276,14 +276,69 @@ func bedrockAssistantContent(parts []ai.Part) []map[string]any {
 	for _, part := range parts {
 		switch p := part.(type) {
 		case ai.TextPart:
-			out = append(out, map[string]any{"text": p.Text})
+			out = append(out, withBedrockContentOptions(map[string]any{"text": p.Text}, p.ProviderOptions))
 		case ai.ReasoningPart:
-			out = append(out, map[string]any{"reasoningContent": map[string]any{"reasoningText": map[string]any{"text": p.Text}}})
+			if signature := bedrockReasoningSignature(p.ProviderMetadata); signature != "" {
+				out = append(out, map[string]any{"reasoningContent": map[string]any{"reasoningText": map[string]any{"text": p.Text, "signature": signature}}})
+			}
 		case ai.ToolCallPart:
 			out = append(out, map[string]any{"toolUse": map[string]any{"toolUseId": p.ToolCallID, "name": p.ToolName, "input": p.Input}})
 		}
 	}
 	return out
+}
+
+func bedrockToolResultContent(output ai.ToolResultOutput) []map[string]any {
+	if len(output.Files) == 0 {
+		return []map[string]any{{"text": toolOutputText(output)}}
+	}
+	var out []map[string]any
+	for _, file := range output.Files {
+		if strings.HasPrefix(file.MediaType, "image/") && len(file.Data) > 0 {
+			out = append(out, map[string]any{"image": map[string]any{"format": mediaSubtype(file.MediaType), "source": map[string]any{"bytes": base64.StdEncoding.EncodeToString(file.Data)}}})
+		} else if len(file.Data) > 0 {
+			name := file.Filename
+			if name == "" {
+				name = "document"
+			}
+			out = append(out, map[string]any{"document": map[string]any{"format": mediaSubtype(file.MediaType), "name": strings.TrimSuffix(name, "."+mediaSubtype(file.MediaType)), "source": map[string]any{"bytes": base64.StdEncoding.EncodeToString(file.Data)}}})
+		} else if file.URL != "" {
+			out = append(out, map[string]any{"text": file.URL})
+		}
+	}
+	if len(out) == 0 {
+		return []map[string]any{{"text": toolOutputText(output)}}
+	}
+	return out
+}
+
+func bedrockToolResultStatus(result ai.ToolResultPart) string {
+	if result.IsError || strings.HasPrefix(result.Output.Type, "error") || result.Output.Type == "execution-denied" {
+		return "error"
+	}
+	return "success"
+}
+
+func bedrockReasoningSignature(metadata ai.ProviderMetadata) string {
+	for _, key := range []string{"amazonBedrock", "bedrock"} {
+		if raw, ok := metadata[key].(map[string]any); ok {
+			if signature, ok := raw["signature"].(string); ok {
+				return signature
+			}
+		}
+	}
+	return ""
+}
+
+func withBedrockContentOptions(block map[string]any, options ai.ProviderOptions) map[string]any {
+	for _, key := range []string{"amazonBedrock", "bedrock"} {
+		if raw, ok := options[key].(map[string]any); ok {
+			if cachePoint, ok := raw["cachePoint"]; ok {
+				block["cachePoint"] = cachePoint
+			}
+		}
+	}
+	return block
 }
 
 func bedrockToolConfig(tools []ai.ModelTool, choice ai.ToolChoice) map[string]any {

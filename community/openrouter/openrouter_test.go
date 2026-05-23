@@ -1,0 +1,145 @@
+package openrouter
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"io"
+	"net/http"
+	"testing"
+
+	"github.com/holbrookab/go-ai/packages/ai"
+)
+
+func TestDoGenerateConvertsOpenRouterChat(t *testing.T) {
+	var request map[string]any
+	client := fakeDoer{do: func(r *http.Request) (*http.Response, error) {
+		if r.URL.Path != "/api/v1/chat/completions" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		if r.Header.Get("Authorization") != "Bearer test-key" {
+			t.Fatalf("missing auth header: %#v", r.Header)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		return jsonResponse(`{
+			"id":"chatcmpl_1",
+			"model":"openai/gpt-test",
+			"choices":[{"finish_reason":"tool_calls","message":{"reasoning":"think","tool_calls":[{"id":"call_1","type":"function","function":{"name":"lookup","arguments":"{\"q\":\"x\"}"}}]}}],
+			"usage":{"prompt_tokens":2,"completion_tokens":3,"total_tokens":5,"cost":0.001}
+		}`), nil
+	}}
+
+	provider := New(Settings{APIKey: "test-key", BaseURL: "https://openrouter.test/api/v1", Client: client})
+	result, err := provider.LanguageModel("openai/gpt-test").DoGenerate(context.Background(), ai.LanguageModelCallOptions{
+		Prompt: []ai.Message{ai.UserMessage("hi")},
+		Tools:  []ai.ModelTool{{Type: "function", Name: "lookup", InputSchema: map[string]any{"type": "object"}}},
+		ProviderOptions: ai.ProviderOptions{"openrouter": map[string]any{
+			"reasoning": map[string]any{"effort": "low"},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("DoGenerate failed: %v", err)
+	}
+	if request["reasoning"] == nil {
+		t.Fatalf("expected openrouter provider option passthrough: %#v", request)
+	}
+	if result.FinishReason.Unified != ai.FinishToolCalls {
+		t.Fatalf("unexpected finish: %#v", result.FinishReason)
+	}
+	if len(result.Content) != 2 {
+		t.Fatalf("expected reasoning and tool call, got %#v", result.Content)
+	}
+}
+
+func TestDoEmbedConvertsOpenRouterEmbeddings(t *testing.T) {
+	client := fakeDoer{do: func(r *http.Request) (*http.Response, error) {
+		if r.URL.Path != "/api/v1/embeddings" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		return jsonResponse(`{
+			"id":"emb_1",
+			"model":"text-embedding-test",
+			"data":[{"index":0,"embedding":[0.1,0.2]},{"index":1,"embedding":[0.3,0.4]}],
+			"usage":{"total_tokens":7}
+		}`), nil
+	}}
+
+	provider := New(Settings{APIKey: "test-key", BaseURL: "https://openrouter.test/api/v1", Client: client})
+	result, err := provider.EmbeddingModel("text-embedding-test").DoEmbed(context.Background(), ai.EmbeddingModelCallOptions{Values: []string{"a", "b"}})
+	if err != nil {
+		t.Fatalf("DoEmbed failed: %v", err)
+	}
+	if len(result.Embeddings) != 2 || len(result.Embeddings[1]) != 2 || result.Embeddings[1][0] != 0.3 {
+		t.Fatalf("unexpected embeddings: %#v", result.Embeddings)
+	}
+	if result.Usage.Tokens == nil || *result.Usage.Tokens != 7 {
+		t.Fatalf("unexpected usage: %#v", result.Usage)
+	}
+}
+
+func TestDoStreamConvertsOpenRouterToolDeltas(t *testing.T) {
+	client := fakeDoer{do: func(r *http.Request) (*http.Response, error) {
+		if r.URL.Path != "/api/v1/chat/completions" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		return streamResponse("" +
+			"data: {\"choices\":[{\"delta\":{\"reasoning\":\"think \",\"tool_calls\":[{\"index\":0,\"id\":\"call_1\",\"type\":\"function\",\"function\":{\"name\":\"lookup\",\"arguments\":\"{\\\"q\\\":\"}}]}}]}\n\n" +
+			"data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"\\\"x\\\"}\"}}]},\"finish_reason\":\"tool_calls\"}],\"usage\":{\"prompt_tokens\":2,\"completion_tokens\":3,\"total_tokens\":5}}\n\n" +
+			"data: [DONE]\n\n"), nil
+	}}
+	provider := New(Settings{APIKey: "test-key", BaseURL: "https://openrouter.test/api/v1", Client: client})
+	result, err := provider.LanguageModel("openai/gpt-test").DoStream(context.Background(), ai.LanguageModelCallOptions{
+		Prompt: []ai.Message{ai.UserMessage("hi")},
+	})
+	if err != nil {
+		t.Fatalf("DoStream failed: %v", err)
+	}
+	var reasoning string
+	var call ai.StreamPart
+	var finish ai.StreamPart
+	for part := range result.Stream {
+		switch part.Type {
+		case "reasoning-delta":
+			reasoning += part.ReasoningDelta
+		case "tool-call":
+			call = part
+		case "finish":
+			finish = part
+		}
+	}
+	if reasoning != "think " {
+		t.Fatalf("unexpected reasoning: %q", reasoning)
+	}
+	if call.ToolCallID != "call_1" || call.ToolName != "lookup" || call.ToolInput != `{"q":"x"}` {
+		t.Fatalf("unexpected tool call: %#v", call)
+	}
+	if finish.Usage.TotalTokens == nil || *finish.Usage.TotalTokens != 5 {
+		t.Fatalf("unexpected usage: %#v", finish.Usage)
+	}
+}
+
+type fakeDoer struct {
+	do func(*http.Request) (*http.Response, error)
+}
+
+func (f fakeDoer) Do(req *http.Request) (*http.Response, error) {
+	return f.do(req)
+}
+
+func jsonResponse(body string) *http.Response {
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(bytes.NewBufferString(body)),
+	}
+}
+
+func streamResponse(body string) *http.Response {
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+		Body:       io.NopCloser(bytes.NewBufferString(body)),
+	}
+}

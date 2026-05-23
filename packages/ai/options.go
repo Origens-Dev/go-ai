@@ -7,6 +7,7 @@ import (
 
 type GenerateTextOptions struct {
 	Model                 LanguageModel
+	Instructions          string
 	System                string
 	Prompt                string
 	Messages              []Message
@@ -20,6 +21,7 @@ type GenerateTextOptions struct {
 	MaxRetries            *int
 	Timeout               TimeoutConfig
 	Headers               map[string]string
+	Include               IncludeConfig
 	ProviderOptions       ProviderOptions
 	MaxOutputTokens       *int
 	Temperature           *float64
@@ -33,8 +35,10 @@ type GenerateTextOptions struct {
 	Download              DownloadFunction
 	Output                *OutputStrategy
 	ResponseFormat        *ResponseFormat
+	Sandbox               Sandbox
 	PrepareStep           func(PrepareStepOptions) (*PrepareStepResult, error)
 	RepairToolCall        ToolCallRepairFunc
+	RefineToolInput       ToolInputRefineFunc
 	Telemetry             Telemetry
 	TelemetryOptions      TelemetryOptions
 	OnStart               func(StartEvent)
@@ -88,22 +92,54 @@ type TimeoutConfig struct {
 	Chunk time.Duration
 }
 
+type IncludeConfig struct {
+	RequestBody     bool
+	ResponseBody    bool
+	RequestMessages bool
+	RawChunks       bool
+}
+
+type Sandbox interface {
+	RunCommand(context.Context, SandboxCommand) (SandboxCommandResult, error)
+	ReadFile(context.Context, string) ([]byte, error)
+	WriteFile(context.Context, string, []byte) error
+}
+
+type SandboxCommand struct {
+	Command []string
+	Stdin   string
+	Env     map[string]string
+	Dir     string
+	Timeout time.Duration
+}
+
+type SandboxCommandResult struct {
+	Stdout   string
+	Stderr   string
+	ExitCode int
+}
+
 type PrepareStepOptions struct {
 	Model        LanguageModel
+	Instructions string
+	System       string
 	Steps        []*StepResult
 	StepNumber   int
 	Messages     []Message
 	ToolsContext map[string]any
+	Sandbox      Sandbox
 }
 
 type PrepareStepResult struct {
 	Model           LanguageModel
+	Instructions    string
 	System          string
 	Messages        []Message
 	Tools           map[string]Tool
 	ToolChoice      ToolChoice
 	ProviderOptions ProviderOptions
 	ToolsContext    map[string]any
+	Sandbox         Sandbox
 }
 
 type GenerateTextResult struct {
@@ -120,8 +156,12 @@ type GenerateTextResult struct {
 	Request          RequestMetadata
 	Response         ResponseMetadata
 	Steps            []*StepResult
+	ResponseMessages []Message
+	FinalStep        *StepResult
 	ToolCalls        []ToolCall
 	ToolResults      []ToolResultPart
+	Files            []GeneratedFile
+	Sources          []SourcePart
 }
 
 type StreamTextResult struct {
@@ -139,8 +179,12 @@ type StreamTextResult struct {
 	Request          RequestMetadata
 	Response         ResponseMetadata
 	Steps            []*StepResult
+	ResponseMessages []Message
+	FinalStep        *StepResult
 	ToolCalls        []ToolCall
 	ToolResults      []ToolResultPart
+	Files            []GeneratedFile
+	Sources          []SourcePart
 	Aborted          bool
 	AbortReason      string
 }
@@ -153,6 +197,7 @@ type GenerateObjectOptions struct {
 	SchemaName            string
 	SchemaDescription     string
 	Enum                  []string
+	Instructions          string
 	System                string
 	Prompt                string
 	Messages              []Message
@@ -192,12 +237,13 @@ type RepairTextOptions struct {
 type ToolCallRepairFunc func(context.Context, ToolCallRepairOptions) (*ToolCallPart, error)
 
 type ToolCallRepairOptions struct {
-	System      string
-	Messages    []Message
-	ToolCall    ToolCallPart
-	Tools       map[string]Tool
-	InputSchema func(toolName string) (any, bool)
-	Error       error
+	Instructions string
+	System       string
+	Messages     []Message
+	ToolCall     ToolCallPart
+	Tools        map[string]Tool
+	InputSchema  func(toolName string) (any, bool)
+	Error        error
 }
 
 type GenerateObjectResult struct {
@@ -291,10 +337,24 @@ type StepResult struct {
 	FinishReason     string
 	RawFinishReason  string
 	Usage            Usage
+	Performance      StepPerformance
 	Warnings         []Warning
 	ProviderMetadata ProviderMetadata
 	Request          RequestMetadata
 	Response         ResponseMetadata
 	ToolCalls        []ToolCall
 	ToolResults      []ToolResultPart
+	Files            []GeneratedFile
+	Sources          []SourcePart
+}
+
+type StepPerformance struct {
+	EffectiveOutputTokensPerSecond *float64
+	OutputTokensPerSecond          *float64
+	InputTokensPerSecond           *float64
+	EffectiveTotalTokensPerSecond  *float64
+	StepTime                       time.Duration
+	ResponseTime                   time.Duration
+	ToolExecutionTime              time.Duration
+	TimeToFirstOutputToken         time.Duration
 }

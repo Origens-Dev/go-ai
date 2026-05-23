@@ -12,11 +12,13 @@ type Telemetry interface {
 }
 
 type TelemetryOptions struct {
-	IsEnabled       *bool
-	RecordInputs    *bool
-	RecordOutputs   *bool
-	FunctionID      string
-	AttributeFilter TelemetryAttributeFilter
+	IsEnabled             *bool
+	RecordInputs          *bool
+	RecordOutputs         *bool
+	IncludeRuntimeContext *bool
+	IncludeToolsContext   *bool
+	FunctionID            string
+	AttributeFilter       TelemetryAttributeFilter
 }
 
 type TelemetryAttributeFilter func(Event, string, any) bool
@@ -74,13 +76,6 @@ func emitChunk(ctx context.Context, telemetry Telemetry, opts TelemetryOptions, 
 	if cb != nil {
 		cb(ChunkEvent{Operation: operation, Chunk: chunk})
 	}
-	recordTelemetry(ctx, telemetry, opts, Event{
-		Name:       name,
-		Operation:  operation,
-		Timestamp:  time.Now(),
-		Attributes: map[string]any{"chunk_type": chunk.Type},
-		Err:        chunk.Err,
-	})
 }
 
 func emitFinish(ctx context.Context, telemetry Telemetry, opts TelemetryOptions, cb func(FinishEvent), name, operation string, result any, attrs map[string]any) {
