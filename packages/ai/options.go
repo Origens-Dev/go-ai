@@ -2,6 +2,7 @@ package ai
 
 import (
 	"context"
+	"io"
 	"time"
 )
 
@@ -45,7 +46,9 @@ type GenerateTextOptions struct {
 	OnToolExecutionStart  func(ToolExecutionStartEvent)
 	OnToolExecutionEnd    func(ToolExecutionEndEvent)
 	OnStepFinish          func(StepFinishEvent)
+	OnEnd                 func(FinishEvent)
 	OnFinish              func(FinishEvent)
+	OnAbort               func(AbortEvent)
 	OnError               func(ErrorEvent)
 }
 
@@ -103,6 +106,17 @@ type Sandbox interface {
 	RunCommand(context.Context, SandboxCommand) (SandboxCommandResult, error)
 	ReadFile(context.Context, string) ([]byte, error)
 	WriteFile(context.Context, string, []byte) error
+}
+
+type SandboxSpawner interface {
+	SpawnCommand(context.Context, SandboxCommand) (SandboxProcess, error)
+}
+
+type SandboxProcess interface {
+	Stdout() io.Reader
+	Stderr() io.Reader
+	Wait(context.Context) (SandboxCommandResult, error)
+	Kill(context.Context) error
 }
 
 type SandboxCommand struct {
@@ -356,5 +370,16 @@ type StepPerformance struct {
 	StepTime                       time.Duration
 	ResponseTime                   time.Duration
 	ToolExecutionTime              time.Duration
+	TimeToFirstOutput              time.Duration
 	TimeToFirstOutputToken         time.Duration
+	TimeBetweenOutputChunks        *OutputChunkTimingStats
+}
+
+type OutputChunkTimingStats struct {
+	Min    time.Duration
+	P10    time.Duration
+	Median time.Duration
+	Avg    time.Duration
+	P90    time.Duration
+	Max    time.Duration
 }

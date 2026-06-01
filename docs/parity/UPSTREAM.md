@@ -5,17 +5,17 @@ This repo tracks Vercel AI SDK `main` as the upstream behavioral reference.
 | Field | Value |
 | --- | --- |
 | Upstream checkout | Local `/Users/dholbrook/src/ai` refreshed from GitHub `vercel/ai` `main` |
-| Upstream package version | `ai@7.0.0-canary.152` |
-| Upstream commit | `9f1e1ba4b93b514f6cca1c8452e6a1fb23e44907` |
+| Upstream package version | `ai@7.0.0-canary.159` |
+| Upstream commit | `ab6d66482` |
 | Upstream working tree | Local checkout, clean after fast-forward |
-| Checked on | 2026-05-23 |
+| Checked on | 2026-06-01 |
 | Go module | `github.com/holbrookab/go-ai` |
 
 ## Compared Scope
 
 Primary scope:
 
-- `packages/ai/src` at `vercel/ai@9f1e1ba4b93b514f6cca1c8452e6a1fb23e44907`
+- `packages/ai/src` at `vercel/ai@ab6d66482`
 - `packages/amazon-bedrock`
 - `packages/anthropic`
 - `packages/google-vertex`
@@ -25,7 +25,7 @@ Community-provider comparison scope:
 
 - OpenRouter's community AI SDK provider repository, used as the behavioral reference for `packages/community/openrouter`
 
-The high-signal upstream delta since the prior canary.121 automation baseline is concentrated in core `packages/ai`: primary `instructions`, accumulated result/final-step semantics, prepare-step carry-forward, request/response inclusion defaults, sandbox plumbing, tool metadata, step performance metrics, stable tool execution callbacks, telemetry event shape changes, and `ToolLoopAgent.allowSystemInMessages`.
+The high-signal upstream delta since the prior canary.152 automation baseline is concentrated in core `packages/ai`: standalone stream conversion helpers, `OnEnd` and abort callback semantics, language-model-call telemetry wrapping, sandbox process spawning, output chunk timing metrics, and `output-error` UI message replay validation.
 
 Current Go implementation scope:
 

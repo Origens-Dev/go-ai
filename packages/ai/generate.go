@@ -158,11 +158,17 @@ func GenerateText(ctx context.Context, opts GenerateTextOptions) (result *Genera
 		var modelResult *LanguageModelGenerateResult
 		callID := emitLanguageModelCallStart(ctx, opts.Telemetry, opts.TelemetryOptions, OperationGenerateText, model, stepNumber, callOptions)
 		err = retry.Do(stepCtx, maxRetries, func() error {
-			result, err := model.DoGenerate(stepCtx, callOptions)
+			err := executeLanguageModelCall(stepCtx, opts.Telemetry, OperationGenerateText, model, stepNumber, callID, func(callCtx context.Context) error {
+				result, err := model.DoGenerate(callCtx, callOptions)
+				if err != nil {
+					return err
+				}
+				modelResult = result
+				return nil
+			})
 			if err != nil {
 				return err
 			}
-			modelResult = result
 			return nil
 		})
 		if err != nil {
@@ -261,7 +267,7 @@ func GenerateText(ctx context.Context, opts GenerateTextOptions) (result *Genera
 			FinishReason:     modelResult.FinishReason.Unified,
 			RawFinishReason:  modelResult.FinishReason.Raw,
 			Usage:            modelResult.Usage,
-			Performance:      performanceFromTimings(stepStarted, responseFinished, toolsFinished, modelResult.Usage, 0),
+			Performance:      performanceFromTimings(stepStarted, responseFinished, toolsFinished, modelResult.Usage, 0, nil),
 			Warnings:         modelResult.Warnings,
 			ProviderMetadata: modelResult.ProviderMetadata,
 			Request:          applyIncludeToRequest(modelResult.Request, opts.Include),
@@ -330,7 +336,7 @@ func GenerateText(ctx context.Context, opts GenerateTextOptions) (result *Genera
 	if outputErr != nil && !IsNoOutputGeneratedError(outputErr) {
 		return nil, outputErr
 	}
-	emitFinish(ctx, opts.Telemetry, opts.TelemetryOptions, opts.OnFinish, EventGenerateTextFinish, OperationGenerateText, result, map[string]any{
+	emitFinish(ctx, opts.Telemetry, opts.TelemetryOptions, endCallback(opts.OnEnd, opts.OnFinish), EventGenerateTextEnd, OperationGenerateText, result, map[string]any{
 		"finish_reason":     result.FinishReason,
 		"raw_finish_reason": result.RawFinishReason,
 		"usage":             result.Usage,

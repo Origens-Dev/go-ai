@@ -64,6 +64,39 @@ func TestStreamTextRunsToolLoop(t *testing.T) {
 	}
 }
 
+func TestStreamTextPerformanceCountsToolCallAsFirstOutput(t *testing.T) {
+	model := &sequenceModel{stream: func(opts LanguageModelCallOptions) (*LanguageModelStreamResult, error) {
+		ch := make(chan StreamPart, 2)
+		go func() {
+			defer close(ch)
+			time.Sleep(2 * time.Millisecond)
+			ch <- StreamPart{Type: "tool-call", ToolCallID: "call-1", ToolName: "weather", ToolInput: `{"city":"NYC"}`}
+			ch <- StreamPart{Type: "finish", FinishReason: FinishReason{Unified: FinishToolCalls}}
+		}()
+		return &LanguageModelStreamResult{Stream: ch}, nil
+	}}
+	result, err := StreamText(context.Background(), StreamTextOptions{
+		GenerateTextOptions: GenerateTextOptions{
+			Model:    model,
+			Prompt:   "weather?",
+			StopWhen: []StopCondition{StepCount(1)},
+			Tools:    map[string]Tool{"weather": {}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range result.Stream {
+	}
+	if len(result.Steps) != 1 {
+		t.Fatalf("steps = %d", len(result.Steps))
+	}
+	perf := result.Steps[0].Performance
+	if perf.TimeToFirstOutput == 0 || perf.TimeToFirstOutputToken != perf.TimeToFirstOutput {
+		t.Fatalf("unexpected time to first output metrics: %#v", perf)
+	}
+}
+
 func TestStreamTextRepairsUnavailableToolCall(t *testing.T) {
 	calls := 0
 	model := &sequenceModel{stream: func(opts LanguageModelCallOptions) (*LanguageModelStreamResult, error) {

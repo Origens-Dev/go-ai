@@ -50,6 +50,7 @@ type UIPart struct {
 	} `json:"approval,omitempty"`
 
 	ProviderMetadata       ProviderMetadata `json:"providerMetadata,omitempty"`
+	ToolMetadata           ProviderMetadata `json:"toolMetadata,omitempty"`
 	CallProviderMetadata   ProviderMetadata `json:"callProviderMetadata,omitempty"`
 	ResultProviderMetadata ProviderMetadata `json:"resultProviderMetadata,omitempty"`
 }
@@ -533,13 +534,13 @@ func partsToUIParts(parts []Part) []UIPart {
 			if part.Dynamic {
 				partType = "dynamic-tool"
 			}
-			out = append(out, UIPart{Type: partType, ToolName: part.ToolName, ToolCallID: part.ToolCallID, State: "input-available", Input: part.Input, ProviderExecuted: part.ProviderExecuted, Dynamic: part.Dynamic, Title: part.Title, CallProviderMetadata: part.ProviderMetadata})
+			out = append(out, UIPart{Type: partType, ToolName: part.ToolName, ToolCallID: part.ToolCallID, State: "input-available", Input: part.Input, ProviderExecuted: part.ProviderExecuted, Dynamic: part.Dynamic, Title: part.Title, ToolMetadata: part.ToolMetadata, CallProviderMetadata: part.ProviderMetadata})
 		case ToolResultPart:
 			partType := "tool-" + part.ToolName
 			if part.Dynamic {
 				partType = "dynamic-tool"
 			}
-			out = append(out, UIPart{Type: partType, ToolName: part.ToolName, ToolCallID: part.ToolCallID, State: "output-available", Input: part.Input, Output: part.Result, ProviderExecuted: part.ProviderExecuted, Dynamic: part.Dynamic, Preliminary: part.Preliminary, ResultProviderMetadata: part.ProviderMetadata})
+			out = append(out, UIPart{Type: partType, ToolName: part.ToolName, ToolCallID: part.ToolCallID, State: "output-available", Input: part.Input, Output: part.Result, ProviderExecuted: part.ProviderExecuted, Dynamic: part.Dynamic, Preliminary: part.Preliminary, ToolMetadata: part.ToolMetadata, ResultProviderMetadata: part.ProviderMetadata})
 		}
 	}
 	return out
@@ -625,7 +626,7 @@ func validateUIPartWithSchemas(messageIndex, partIndex int, part UIPart, opts Va
 				toolName,
 			)
 		}
-		shouldValidateInput := part.State == "input-available" || part.State == "output-available" || (part.State == "output-error" && part.Input != nil)
+		shouldValidateInput := part.State == "input-available" || part.State == "output-available"
 		if shouldValidateInput {
 			if err := validateUIToolInput(tool, part.Input); err != nil {
 				return invalidUIMessagef(

@@ -398,6 +398,7 @@ func ApplyUIMessageChunk(state *StreamingUIMessageState, chunk UIMessageChunk) e
 			Input:            nil,
 			ProviderExecuted: chunk.ProviderExecuted,
 			ProviderMetadata: chunk.ProviderMetadata,
+			ToolMetadata:     chunk.ToolMetadata,
 			Title:            chunk.Title,
 		})
 	case UIMessageChunkTypeToolInputDelta:
@@ -424,6 +425,7 @@ func ApplyUIMessageChunk(state *StreamingUIMessageState, chunk UIMessageChunk) e
 			Input:            chunk.Input,
 			ProviderExecuted: chunk.ProviderExecuted,
 			ProviderMetadata: chunk.ProviderMetadata,
+			ToolMetadata:     chunk.ToolMetadata,
 			Title:            chunk.Title,
 		})
 		delete(state.PartialToolCalls, chunk.ToolCallID)
@@ -442,6 +444,7 @@ func ApplyUIMessageChunk(state *StreamingUIMessageState, chunk UIMessageChunk) e
 			ErrorText:        chunk.ErrorText,
 			ProviderExecuted: chunk.ProviderExecuted,
 			ProviderMetadata: chunk.ProviderMetadata,
+			ToolMetadata:     chunk.ToolMetadata,
 			Title:            chunk.Title,
 		}
 		if !dynamic {
@@ -499,6 +502,7 @@ func ApplyUIMessageChunk(state *StreamingUIMessageState, chunk UIMessageChunk) e
 			Preliminary:      chunk.Preliminary,
 			ProviderExecuted: chunk.ProviderExecuted,
 			ProviderMetadata: chunk.ProviderMetadata,
+			ToolMetadata:     chunk.ToolMetadata,
 			Title:            part.Title,
 		})
 	case UIMessageChunkTypeToolOutputError:
@@ -516,6 +520,7 @@ func ApplyUIMessageChunk(state *StreamingUIMessageState, chunk UIMessageChunk) e
 			ErrorText:        chunk.ErrorText,
 			ProviderExecuted: chunk.ProviderExecuted,
 			ProviderMetadata: chunk.ProviderMetadata,
+			ToolMetadata:     chunk.ToolMetadata,
 			Title:            part.Title,
 		})
 	case UIMessageChunkTypeStartStep:
@@ -661,6 +666,7 @@ type streamingToolPartUpdate struct {
 	ErrorText        string
 	ProviderExecuted *bool
 	ProviderMetadata ProviderMetadata
+	ToolMetadata     ProviderMetadata
 	Preliminary      *bool
 	Title            string
 }
@@ -731,6 +737,7 @@ func updateStreamingToolPart(state *StreamingUIMessageState, update streamingToo
 			ErrorText:        update.ErrorText,
 			ProviderExecuted: boolPtrValue(update.ProviderExecuted),
 			Preliminary:      boolPtrValue(update.Preliminary),
+			ToolMetadata:     update.ToolMetadata,
 			Title:            update.Title,
 		})
 		index = len(state.Message.Parts) - 1
@@ -763,6 +770,9 @@ func updateStreamingToolPart(state *StreamingUIMessageState, update streamingToo
 		} else {
 			part.CallProviderMetadata = mergeMetadata(part.CallProviderMetadata, update.ProviderMetadata)
 		}
+	}
+	if len(update.ToolMetadata) > 0 {
+		part.ToolMetadata = mergeMetadata(part.ToolMetadata, update.ToolMetadata)
 	}
 }
 

@@ -6,12 +6,15 @@ const (
 	EventGenerateTextStart      = EventOnStart
 	EventGenerateTextStepFinish = EventOnStepFinish
 	EventGenerateTextFinish     = EventOnFinish
+	EventGenerateTextEnd        = EventOnEnd
 	EventGenerateTextError      = EventOnError
 
 	EventStreamTextStart      = EventOnStart
 	EventStreamTextChunk      = EventOnChunk
 	EventStreamTextStepFinish = EventOnStepFinish
 	EventStreamTextFinish     = EventOnFinish
+	EventStreamTextEnd        = EventOnEnd
+	EventStreamTextAbort      = EventOnAbort
 	EventStreamTextError      = EventOnError
 
 	EventEmbedStart  = EventOnStart
@@ -68,6 +71,8 @@ const (
 	EventOnEmbedFinish            = "onEmbedFinish"
 	EventOnRerankStart            = "onRerankStart"
 	EventOnRerankFinish           = "onRerankFinish"
+	EventOnEnd                    = "onEnd"
+	EventOnAbort                  = "onAbort"
 	EventOnFinish                 = "onFinish"
 	EventOnError                  = "onError"
 
@@ -131,6 +136,13 @@ type FinishEvent struct {
 	Operation string
 	CallID    string
 	Result    any
+}
+
+type AbortEvent struct {
+	Operation string
+	CallID    string
+	Steps     []*StepResult
+	Reason    any
 }
 
 type ChunkEvent struct {

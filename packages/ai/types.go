@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-const Version = "0.2.5"
+const Version = "0.2.6"
 
 type ProviderOptions map[string]any
 type ProviderMetadata map[string]any
@@ -344,6 +344,10 @@ type StreamPart struct {
 	Performance      StepPerformance
 	ToolMetadata     ProviderMetadata
 	ProviderMetadata ProviderMetadata
+	ProviderExecuted *bool
+	Dynamic          *bool
+	Preliminary      *bool
+	Title            string
 	Raw              any
 	AbortReason      string
 	Err              error

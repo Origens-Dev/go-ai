@@ -49,7 +49,9 @@ type AgentCallOptions struct {
 	OnToolExecutionStart  func(ToolExecutionStartEvent)
 	OnToolExecutionEnd    func(ToolExecutionEndEvent)
 	OnStepFinish          func(StepFinishEvent)
+	OnEnd                 func(FinishEvent)
 	OnFinish              func(FinishEvent)
+	OnAbort               func(AbortEvent)
 	OnError               func(ErrorEvent)
 }
 
@@ -96,7 +98,9 @@ type ToolLoopAgentSettings struct {
 	OnToolExecutionStart func(ToolExecutionStartEvent)
 	OnToolExecutionEnd   func(ToolExecutionEndEvent)
 	OnStepFinish         func(StepFinishEvent)
+	OnEnd                func(FinishEvent)
 	OnFinish             func(FinishEvent)
+	OnAbort              func(AbortEvent)
 	OnError              func(ErrorEvent)
 	PrepareCall          func(AgentPrepareCallOptions) (*AgentPreparedCall, error)
 }
@@ -212,7 +216,8 @@ func (a *ToolLoopAgent) Generate(ctx context.Context, opts AgentCallOptions) (*G
 		OnToolExecutionStart:  mergeToolExecutionStartCallbacks(a.settings.OnToolExecutionStart, opts.OnToolExecutionStart),
 		OnToolExecutionEnd:    mergeToolExecutionEndCallbacks(a.settings.OnToolExecutionEnd, opts.OnToolExecutionEnd),
 		OnStepFinish:          mergeStepFinishCallbacks(a.settings.OnStepFinish, opts.OnStepFinish),
-		OnFinish:              mergeFinishCallbacks(a.settings.OnFinish, opts.OnFinish),
+		OnEnd:                 mergeFinishCallbacks(firstFinishCallback(a.settings.OnEnd, a.settings.OnFinish), firstFinishCallback(opts.OnEnd, opts.OnFinish)),
+		OnFinish:              nil,
 		OnError:               mergeErrorCallbacks(a.settings.OnError, opts.OnError),
 	})
 }
@@ -261,7 +266,9 @@ func (a *ToolLoopAgent) Stream(ctx context.Context, opts AgentStreamOptions) (*S
 			OnToolExecutionStart:  mergeToolExecutionStartCallbacks(a.settings.OnToolExecutionStart, opts.OnToolExecutionStart),
 			OnToolExecutionEnd:    mergeToolExecutionEndCallbacks(a.settings.OnToolExecutionEnd, opts.OnToolExecutionEnd),
 			OnStepFinish:          mergeStepFinishCallbacks(a.settings.OnStepFinish, opts.OnStepFinish),
-			OnFinish:              mergeFinishCallbacks(a.settings.OnFinish, opts.OnFinish),
+			OnEnd:                 mergeFinishCallbacks(firstFinishCallback(a.settings.OnEnd, a.settings.OnFinish), firstFinishCallback(opts.OnEnd, opts.OnFinish)),
+			OnFinish:              nil,
+			OnAbort:               mergeAbortCallbacks(a.settings.OnAbort, opts.OnAbort),
 			OnError:               mergeErrorCallbacks(a.settings.OnError, opts.OnError),
 		},
 		IncludeRawChunks: opts.IncludeRawChunks,
@@ -706,6 +713,25 @@ func mergeStepFinishCallbacks(callbacks ...func(StepFinishEvent)) func(StepFinis
 
 func mergeFinishCallbacks(callbacks ...func(FinishEvent)) func(FinishEvent) {
 	return func(event FinishEvent) {
+		for _, callback := range callbacks {
+			if callback != nil {
+				callback(event)
+			}
+		}
+	}
+}
+
+func firstFinishCallback(callbacks ...func(FinishEvent)) func(FinishEvent) {
+	for _, callback := range callbacks {
+		if callback != nil {
+			return callback
+		}
+	}
+	return nil
+}
+
+func mergeAbortCallbacks(callbacks ...func(AbortEvent)) func(AbortEvent) {
+	return func(event AbortEvent) {
 		for _, callback := range callbacks {
 			if callback != nil {
 				callback(event)

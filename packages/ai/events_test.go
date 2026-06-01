@@ -40,7 +40,7 @@ func TestGenerateTextLifecycleEvents(t *testing.T) {
 	if want := []string{"generate_text:start", "generate_text:step", "generate_text:finish"}; !reflect.DeepEqual(callbacks, want) {
 		t.Fatalf("callbacks = %#v, want %#v", callbacks, want)
 	}
-	if want := []string{EventGenerateTextStart, EventOnLanguageModelCallStart, EventOnLanguageModelCallEnd, EventGenerateTextStepFinish, EventGenerateTextFinish}; !reflect.DeepEqual(telemetry.names(), want) {
+	if want := []string{EventGenerateTextStart, EventOnLanguageModelCallStart, EventOnLanguageModelCallEnd, EventGenerateTextStepFinish, EventGenerateTextEnd}; !reflect.DeepEqual(telemetry.names(), want) {
 		t.Fatalf("telemetry = %#v, want %#v", telemetry.names(), want)
 	}
 	events := telemetry.snapshot()
@@ -77,7 +77,7 @@ func TestStreamTextLifecycleChunkAndErrorEvents(t *testing.T) {
 	if want := []string{"start-step", "text-delta", "finish-step", "finish"}; !reflect.DeepEqual(chunks, want) {
 		t.Fatalf("chunks = %#v, want %#v", chunks, want)
 	}
-	if !containsEvent(telemetry.names(), EventStreamTextFinish) {
+	if !containsEvent(telemetry.names(), EventStreamTextEnd) {
 		t.Fatalf("expected stream finish telemetry, got %#v", telemetry.names())
 	}
 
@@ -95,6 +95,64 @@ func TestStreamTextLifecycleChunkAndErrorEvents(t *testing.T) {
 	}
 	if !errors.Is(errorEvent, boom) {
 		t.Fatalf("expected error callback to receive boom, got %v", errorEvent)
+	}
+}
+
+func TestOnEndAliasAndLanguageModelCallTelemetryWrapper(t *testing.T) {
+	telemetry := &wrappingTelemetry{}
+	var callbacks []string
+	_, err := GenerateText(context.Background(), GenerateTextOptions{
+		Model:     mockModel{},
+		Prompt:    "hello",
+		Telemetry: telemetry,
+		OnEnd: func(event FinishEvent) {
+			callbacks = append(callbacks, "onEnd")
+		},
+		OnFinish: func(event FinishEvent) {
+			callbacks = append(callbacks, "onFinish")
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(callbacks, []string{"onEnd"}) {
+		t.Fatalf("callbacks = %#v", callbacks)
+	}
+	if telemetry.wrapped != 1 || telemetry.callEvents[0].Operation != OperationGenerateText {
+		t.Fatalf("language model call was not wrapped: %#v", telemetry)
+	}
+	if !containsEvent(telemetry.names(), EventGenerateTextEnd) {
+		t.Fatalf("expected onEnd telemetry, got %#v", telemetry.names())
+	}
+}
+
+func TestStreamTextOnAbortCallbackAndTelemetry(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	telemetry := &recordingTelemetry{}
+	var aborts []AbortEvent
+	result, err := StreamText(ctx, StreamTextOptions{
+		GenerateTextOptions: GenerateTextOptions{
+			Model: &sequenceModel{stream: func(opts LanguageModelCallOptions) (*LanguageModelStreamResult, error) {
+				return nil, errors.New("should not call model")
+			}},
+			Prompt:    "hello",
+			Telemetry: telemetry,
+			OnAbort: func(event AbortEvent) {
+				aborts = append(aborts, event)
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range result.Stream {
+	}
+	if len(aborts) != 1 || aborts[0].Reason == nil {
+		t.Fatalf("expected abort callback with reason, got %#v", aborts)
+	}
+	if !containsEvent(telemetry.names(), EventStreamTextAbort) {
+		t.Fatalf("expected abort telemetry, got %#v", telemetry.names())
 	}
 }
 
@@ -185,6 +243,18 @@ func TestTelemetryDisabledSuppressesRecordEvent(t *testing.T) {
 type recordingTelemetry struct {
 	mu     sync.Mutex
 	events []Event
+}
+
+type wrappingTelemetry struct {
+	recordingTelemetry
+	wrapped    int
+	callEvents []LanguageModelCallEvent
+}
+
+func (w *wrappingTelemetry) ExecuteLanguageModelCall(ctx context.Context, event LanguageModelCallEvent, execute func(context.Context) error) error {
+	w.wrapped++
+	w.callEvents = append(w.callEvents, event)
+	return execute(ctx)
 }
 
 func (r *recordingTelemetry) RecordEvent(_ context.Context, event Event) {
