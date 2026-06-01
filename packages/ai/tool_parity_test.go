@@ -3,6 +3,8 @@ package ai
 import (
 	"context"
 	"errors"
+	"io"
+	"strings"
 	"testing"
 	"time"
 )
@@ -137,7 +139,7 @@ func TestPerformanceFromTimingsComputesThroughput(t *testing.T) {
 		InputTokens:  &in,
 		OutputTokens: &out,
 		TotalTokens:  &total,
-	}, 100*time.Millisecond)
+	}, 100*time.Millisecond, []time.Duration{10 * time.Millisecond, 20 * time.Millisecond})
 	if perf.OutputTokensPerSecond == nil || *perf.OutputTokensPerSecond != 10 {
 		t.Fatalf("unexpected output tps: %#v", perf.OutputTokensPerSecond)
 	}
@@ -146,6 +148,38 @@ func TestPerformanceFromTimingsComputesThroughput(t *testing.T) {
 	}
 	if perf.TimeToFirstOutputToken != 100*time.Millisecond {
 		t.Fatalf("unexpected ttft: %#v", perf.TimeToFirstOutputToken)
+	}
+	if perf.TimeToFirstOutput != 100*time.Millisecond {
+		t.Fatalf("unexpected time to first output: %#v", perf.TimeToFirstOutput)
+	}
+	if perf.TimeBetweenOutputChunks == nil || perf.TimeBetweenOutputChunks.Min != 10*time.Millisecond || perf.TimeBetweenOutputChunks.Max != 20*time.Millisecond {
+		t.Fatalf("unexpected output chunk timing stats: %#v", perf.TimeBetweenOutputChunks)
+	}
+}
+
+func TestSandboxSpawnerOptionalInterface(t *testing.T) {
+	sandbox := testSandbox{}
+	spawner, ok := any(sandbox).(SandboxSpawner)
+	if !ok {
+		t.Fatalf("test sandbox should implement optional spawner")
+	}
+	process, err := spawner.SpawnCommand(context.Background(), SandboxCommand{Command: []string{"echo", "ok"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stdout, err := io.ReadAll(process.Stdout())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(stdout) != "ok" {
+		t.Fatalf("stdout = %q", stdout)
+	}
+	result, err := process.Wait(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.ExitCode != 0 {
+		t.Fatalf("result = %#v", result)
 	}
 }
 
@@ -160,5 +194,27 @@ func (testSandbox) ReadFile(context.Context, string) ([]byte, error) {
 }
 
 func (testSandbox) WriteFile(context.Context, string, []byte) error {
+	return nil
+}
+
+func (testSandbox) SpawnCommand(context.Context, SandboxCommand) (SandboxProcess, error) {
+	return testSandboxProcess{}, nil
+}
+
+type testSandboxProcess struct{}
+
+func (testSandboxProcess) Stdout() io.Reader {
+	return strings.NewReader("ok")
+}
+
+func (testSandboxProcess) Stderr() io.Reader {
+	return strings.NewReader("")
+}
+
+func (testSandboxProcess) Wait(context.Context) (SandboxCommandResult, error) {
+	return SandboxCommandResult{ExitCode: 0, Stdout: "ok"}, nil
+}
+
+func (testSandboxProcess) Kill(context.Context) error {
 	return nil
 }

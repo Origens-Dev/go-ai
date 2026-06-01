@@ -23,143 +23,86 @@ func CreateAgentUIStream(ctx context.Context, opts AgentUIStreamOptions) <-chan 
 			return writeStreamTextResultAsUIMessageChunks(ctx, writer, result, StreamTextUIMessageStreamOptions{
 				MessageID: opts.MessageID,
 				TextID:    opts.TextID,
+				Tools:     opts.Agent.Tools(),
 			})
 		},
 	})
 }
 
 type StreamTextUIMessageStreamOptions struct {
-	MessageID  string
-	TextID     string
-	BufferSize int
+	MessageID        string
+	TextID           string
+	BufferSize       int
+	SendReasoning    *bool
+	SendSources      *bool
+	SendStart        *bool
+	SendFinish       *bool
+	MessageMetadata  any
+	OriginalMessages []UIMessage
+	GenerateID       func() string
+	OnStepFinish     func(UIMessageStreamStepFinishEvent) error
+	OnFinish         func(UIMessageStreamFinishEvent) error
+	OnError          func(error) string
+	Tools            map[string]Tool
 }
 
 func CreateStreamTextUIMessageStream(ctx context.Context, result *StreamTextResult, options ...StreamTextUIMessageStreamOptions) <-chan UIMessageChunk {
 	opts := firstStreamTextUIMessageStreamOptions(options)
-	return CreateUIMessageStream(CreateUIMessageStreamOptions{
-		Context:    ctx,
-		BufferSize: opts.BufferSize,
-		Execute: func(writer UIMessageStreamWriter) error {
-			return writeStreamTextResultAsUIMessageChunks(ctx, writer, result, opts)
+	if result == nil || result.Stream == nil {
+		return CreateUIMessageStream(CreateUIMessageStreamOptions{
+			Context: ctx,
+			Execute: func(UIMessageStreamWriter) error {
+				return &SDKError{Kind: ErrNoOutputGenerated, Message: "stream text result is empty"}
+			},
+		})
+	}
+	return ToUIMessageStream(ctx, result.Stream, ToUIMessageStreamOptions{
+		ToUIMessageChunkOptions: ToUIMessageChunkOptions{
+			Tools:           opts.Tools,
+			TextID:          opts.TextID,
+			SendReasoning:   opts.SendReasoning,
+			SendSources:     opts.SendSources,
+			SendStart:       opts.SendStart,
+			SendFinish:      opts.SendFinish,
+			OnError:         opts.OnError,
+			MessageMetadata: opts.MessageMetadata,
+			MessageID:       opts.MessageID,
 		},
+		OriginalMessages: opts.OriginalMessages,
+		GenerateID:       opts.GenerateID,
+		OnStepFinish:     opts.OnStepFinish,
+		OnFinish:         opts.OnFinish,
+		BufferSize:       opts.BufferSize,
 	})
 }
 
 func writeStreamTextResultAsUIMessageChunks(ctx context.Context, writer UIMessageStreamWriter, result *StreamTextResult, opts StreamTextUIMessageStreamOptions) error {
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	if result == nil || result.Stream == nil {
 		return &SDKError{Kind: ErrNoOutputGenerated, Message: "stream text result is empty"}
 	}
-	messageID := opts.MessageID
-	if messageID == "" {
-		messageID = "message-1"
-	}
-	textID := opts.TextID
-	if textID == "" {
-		textID = "text-1"
-	}
-	writer.Write(StartUIMessageChunk(messageID))
-	textStarted := false
-	reasoningStarted := map[string]bool{}
-	write := func(chunk UIMessageChunk, part StreamPart) {
-		writer.Write(withUIChunkStepMetadata(chunk, part))
-	}
-	for {
-		var part StreamPart
-		var ok bool
-		select {
-		case <-ctx.Done():
+	for chunk := range ToUIMessageStream(ctx, result.Stream, ToUIMessageStreamOptions{
+		ToUIMessageChunkOptions: ToUIMessageChunkOptions{
+			Tools:           opts.Tools,
+			TextID:          opts.TextID,
+			SendReasoning:   opts.SendReasoning,
+			SendSources:     opts.SendSources,
+			SendStart:       opts.SendStart,
+			SendFinish:      opts.SendFinish,
+			OnError:         opts.OnError,
+			MessageMetadata: opts.MessageMetadata,
+			MessageID:       opts.MessageID,
+		},
+		OriginalMessages: opts.OriginalMessages,
+		GenerateID:       opts.GenerateID,
+		OnStepFinish:     opts.OnStepFinish,
+		OnFinish:         opts.OnFinish,
+		BufferSize:       opts.BufferSize,
+	}) {
+		if !writer.Write(chunk) {
 			return ctx.Err()
-		case part, ok = <-result.Stream:
-			if !ok {
-				return nil
-			}
-		}
-		switch part.Type {
-		case "start-step":
-			write(UIMessageChunk{Type: UIMessageChunkTypeStartStep}, part)
-		case "text-delta":
-			if !textStarted {
-				write(UIMessageChunk{Type: UIMessageChunkTypeTextStart, ID: textID, ProviderMetadata: part.ProviderMetadata}, part)
-				textStarted = true
-			}
-			write(UIMessageChunk{Type: UIMessageChunkTypeTextDelta, ID: textID, Delta: part.TextDelta, ProviderMetadata: part.ProviderMetadata}, part)
-		case "reasoning-delta":
-			id := part.ID
-			if id == "" {
-				id = "reasoning-1"
-			}
-			if !reasoningStarted[id] {
-				write(UIMessageChunk{Type: UIMessageChunkTypeReasoningStart, ID: id, ProviderMetadata: part.ProviderMetadata}, part)
-				reasoningStarted[id] = true
-			}
-			write(UIMessageChunk{Type: UIMessageChunkTypeReasoningDelta, ID: id, Delta: part.ReasoningDelta, ProviderMetadata: part.ProviderMetadata}, part)
-		case "tool-input-delta":
-			write(UIMessageChunk{Type: UIMessageChunkTypeToolInputDelta, ToolCallID: part.ToolCallID, InputTextDelta: part.ToolInputDelta}, part)
-		case "tool-call":
-			input, _ := parseUIStreamToolInput(part.ToolInput)
-			write(UIMessageChunk{
-				Type:             UIMessageChunkTypeToolInputAvailable,
-				ToolCallID:       part.ToolCallID,
-				ToolName:         part.ToolName,
-				Input:            input,
-				ProviderMetadata: part.ProviderMetadata,
-			}, part)
-		case "tool-result":
-			output := any(part.Content)
-			if resultPart, ok := part.Content.(ToolResultPart); ok {
-				output = resultPart.Output.Value
-				if resultPart.Output.Type == "execution-denied" {
-					write(UIMessageChunk{Type: UIMessageChunkTypeToolOutputDenied, ToolCallID: part.ToolCallID}, part)
-					continue
-				}
-				if resultPart.Output.Type == "error-text" || resultPart.Output.Type == "error-json" {
-					write(UIMessageChunk{Type: UIMessageChunkTypeToolOutputError, ToolCallID: part.ToolCallID, ErrorText: stringifyToolOutput(resultPart.Output.Value)}, part)
-					continue
-				}
-			}
-			write(UIMessageChunk{Type: UIMessageChunkTypeToolOutputAvailable, ToolCallID: part.ToolCallID, Output: output, ProviderMetadata: part.ProviderMetadata}, part)
-		case "file":
-			if file, ok := part.Content.(FilePart); ok {
-				write(UIMessageChunk{Type: UIMessageChunkTypeFile, URL: file.Data.URL, MediaType: file.MediaType, Filename: file.Filename, ProviderMetadata: mergeMetadata(ProviderMetadata(file.ProviderOptions), file.ProviderMetadata)}, part)
-			}
-		case "source":
-			chunk := UIMessageChunk{Type: UIMessageChunkTypeSourceURL, SourceID: part.ID, ProviderMetadata: part.ProviderMetadata}
-			if source, ok := part.Content.(SourcePart); ok {
-				chunk.SourceID = source.ID
-				chunk.URL = source.URL
-				chunk.Title = source.Title
-			}
-			write(chunk, part)
-		case "finish-step":
-			write(UIMessageChunk{Type: UIMessageChunkTypeFinishStep, FinishReason: part.FinishReason.Unified, ProviderMetadata: part.ProviderMetadata}, part)
-		case "finish":
-			if textStarted {
-				writer.Write(TextEndUIMessageChunk(textID))
-			}
-			for id := range reasoningStarted {
-				writer.Write(UIMessageChunk{Type: UIMessageChunkTypeReasoningEnd, ID: id})
-			}
-			writer.Write(FinishUIMessageChunk(part.FinishReason.Unified))
-		case "abort":
-			if textStarted {
-				writer.Write(TextEndUIMessageChunk(textID))
-			}
-			for id := range reasoningStarted {
-				writer.Write(UIMessageChunk{Type: UIMessageChunkTypeReasoningEnd, ID: id})
-			}
-			writer.Write(UIMessageChunk{Type: UIMessageChunkTypeAbort, Reason: part.AbortReason})
-		case "error":
-			writer.Write(ErrorUIMessageChunk(part.Err))
-		default:
-			if part.Type == "" || part.Type == "raw" {
-				continue
-			}
-			writer.Write(UIMessageChunk{Type: UIMessageChunkTypeCustom, Kind: part.Type, ProviderMetadata: part.ProviderMetadata})
 		}
 	}
+	return nil
 }
 
 func firstStreamTextUIMessageStreamOptions(options []StreamTextUIMessageStreamOptions) StreamTextUIMessageStreamOptions {

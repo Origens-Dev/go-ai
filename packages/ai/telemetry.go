@@ -11,6 +11,18 @@ type Telemetry interface {
 	RecordEvent(context.Context, Event)
 }
 
+type LanguageModelCallTelemetry interface {
+	ExecuteLanguageModelCall(context.Context, LanguageModelCallEvent, func(context.Context) error) error
+}
+
+type LanguageModelCallEvent struct {
+	Operation  string
+	CallID     string
+	StepNumber int
+	Provider   string
+	ModelID    string
+}
+
 type TelemetryOptions struct {
 	IsEnabled             *bool
 	RecordInputs          *bool
@@ -90,6 +102,32 @@ func emitFinish(ctx context.Context, telemetry Telemetry, opts TelemetryOptions,
 	})
 }
 
+func endCallback(onEnd, onFinish func(FinishEvent)) func(FinishEvent) {
+	if onEnd != nil {
+		return onEnd
+	}
+	return onFinish
+}
+
+func emitAbortEvent(ctx context.Context, telemetry Telemetry, opts TelemetryOptions, cb func(AbortEvent), name, operation string, steps []*StepResult, reason any) {
+	callID := ""
+	if len(steps) > 0 && steps[len(steps)-1] != nil {
+		callID = steps[len(steps)-1].CallID
+	}
+	if cb != nil {
+		cb(AbortEvent{Operation: operation, CallID: callID, Steps: steps, Reason: reason})
+	}
+	recordTelemetry(ctx, telemetry, opts, Event{
+		Name:      name,
+		Operation: operation,
+		CallID:    callID,
+		Timestamp: time.Now(),
+		Attributes: map[string]any{
+			"reason": reason,
+		},
+	})
+}
+
 func emitError(ctx context.Context, telemetry Telemetry, opts TelemetryOptions, cb func(ErrorEvent), name, operation string, err error) {
 	if err == nil {
 		return
@@ -128,6 +166,24 @@ func emitLanguageModelCallStart(ctx context.Context, telemetry Telemetry, opts T
 		Attributes: attrs,
 	})
 	return callID
+}
+
+func executeLanguageModelCall(ctx context.Context, telemetry Telemetry, operation string, model interface {
+	Provider() string
+	ModelID() string
+}, stepNumber int, callID string, execute func(context.Context) error) error {
+	wrapper, ok := telemetry.(LanguageModelCallTelemetry)
+	if !ok || wrapper == nil {
+		return execute(ctx)
+	}
+	provider, modelID := modelInfo(model)
+	return wrapper.ExecuteLanguageModelCall(ctx, LanguageModelCallEvent{
+		Operation:  operation,
+		CallID:     callID,
+		StepNumber: stepNumber,
+		Provider:   provider,
+		ModelID:    modelID,
+	}, execute)
 }
 
 func emitLanguageModelCallEnd(ctx context.Context, telemetry Telemetry, opts TelemetryOptions, operation string, model interface {

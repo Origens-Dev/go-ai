@@ -196,6 +196,64 @@ func TestValidateUIMessageChunk(t *testing.T) {
 	}
 }
 
+func TestStandaloneStreamHelpersMapTextAndUIChunks(t *testing.T) {
+	providerExecuted := true
+	dynamic := true
+	stream := make(chan StreamPart, 6)
+	stream <- StreamPart{Type: "text-delta", TextDelta: "hello"}
+	stream <- StreamPart{Type: "source", Content: SourcePart{ID: "src-1", URL: "https://example.com", Title: "Example"}, ProviderMetadata: ProviderMetadata{"provider": "meta"}}
+	stream <- StreamPart{Type: "tool-call", ToolCallID: "call-1", ToolName: "weather", ToolInput: `{"city":"NYC"}`, ToolMetadata: ProviderMetadata{"client": "mcp"}, ProviderExecuted: &providerExecuted, Dynamic: &dynamic, Title: "Weather"}
+	stream <- StreamPart{Type: "tool-result", ToolCallID: "call-1", ToolName: "weather", Content: ToolResultPart{ToolCallID: "call-1", ToolName: "weather", Output: ToolResultOutput{Value: "sunny"}, ToolMetadata: ProviderMetadata{"client": "mcp"}, ProviderExecuted: true}}
+	stream <- StreamPart{Type: "finish", FinishReason: FinishReason{Unified: FinishStop}}
+	close(stream)
+
+	sendSources := true
+	chunks, err := ReadUIMessageStream(ToUIMessageStream(context.Background(), stream, ToUIMessageStreamOptions{
+		ToUIMessageChunkOptions: ToUIMessageChunkOptions{
+			TextID:      "text-1",
+			MessageID:   "message-1",
+			SendSources: &sendSources,
+		},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sawText, sawSource, sawToolCall, sawToolResult, sawFinish bool
+	for _, chunk := range chunks {
+		switch chunk.Type {
+		case UIMessageChunkTypeTextDelta:
+			sawText = chunk.Delta == "hello"
+		case UIMessageChunkTypeSourceURL:
+			sawSource = chunk.SourceID == "src-1" && chunk.URL == "https://example.com"
+		case UIMessageChunkTypeToolInputAvailable:
+			sawToolCall = chunk.ToolCallID == "call-1" && chunk.ToolName == "weather" && chunk.ToolMetadata["client"] == "mcp" && chunk.ProviderExecuted != nil && *chunk.ProviderExecuted && chunk.Dynamic != nil && *chunk.Dynamic && chunk.Title == "Weather"
+		case UIMessageChunkTypeToolOutputAvailable:
+			sawToolResult = chunk.Output == "sunny" && chunk.ToolMetadata["client"] == "mcp"
+		case UIMessageChunkTypeFinish:
+			sawFinish = chunk.FinishReason == FinishStop
+		}
+	}
+	if !sawText || !sawSource || !sawToolCall || !sawToolResult || !sawFinish {
+		t.Fatalf("missing expected converted chunks: %#v", chunks)
+	}
+}
+
+func TestToTextStreamExtractsOnlyTextDeltas(t *testing.T) {
+	stream := make(chan StreamPart, 3)
+	stream <- StreamPart{Type: "reasoning-delta", ReasoningDelta: "hidden"}
+	stream <- StreamPart{Type: "text-delta", TextDelta: "hello"}
+	stream <- StreamPart{Type: "text-delta", TextDelta: " world"}
+	close(stream)
+
+	got, err := CollectTextStream(context.Background(), ToTextStream(context.Background(), stream))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "hello world" {
+		t.Fatalf("text stream = %q", got)
+	}
+}
+
 func TestWriteUIMessageStreamResponseSSE(t *testing.T) {
 	stream := make(chan UIMessageChunk, 3)
 	stream <- TextStartUIMessageChunk("text-1")

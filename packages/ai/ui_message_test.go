@@ -166,6 +166,32 @@ func TestValidateUIMessagesRejectsInvalidToolInputSchema(t *testing.T) {
 	}
 }
 
+func TestValidateUIMessagesDoesNotRevalidateOutputErrorInput(t *testing.T) {
+	tools := map[string]Tool{"weather": {
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"city": map[string]any{"type": "string"},
+			},
+			"required": []string{"city"},
+		},
+	}}
+	err := ValidateUIMessages([]UIMessage{{
+		ID:   "1",
+		Role: RoleAssistant,
+		Parts: []UIPart{{
+			Type:       "tool-weather",
+			ToolCallID: "call-1",
+			State:      "output-error",
+			Input:      map[string]any{"city": 123},
+			ErrorText:  "AI_InvalidToolInputError",
+		}},
+	}}, ValidateUIMessagesOptions{Tools: tools})
+	if err != nil {
+		t.Fatalf("output-error input should not be revalidated: %v", err)
+	}
+}
+
 func TestValidateUIMessagesRejectsInvalidToolOutputSchema(t *testing.T) {
 	err := ValidateUIMessages([]UIMessage{{
 		ID:   "1",

@@ -53,6 +53,7 @@ type UIMessageChunk struct {
 	Delta            string           `json:"delta,omitempty"`
 	ErrorText        string           `json:"errorText,omitempty"`
 	ProviderMetadata ProviderMetadata `json:"providerMetadata,omitempty"`
+	ToolMetadata     ProviderMetadata `json:"toolMetadata,omitempty"`
 
 	ToolCallID       string `json:"toolCallId,omitempty"`
 	ToolName         string `json:"toolName,omitempty"`

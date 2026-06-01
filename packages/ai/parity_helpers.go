@@ -2,6 +2,7 @@ package ai
 
 import (
 	"encoding/json"
+	"sort"
 	"strings"
 	"time"
 )
@@ -103,7 +104,7 @@ func sourcesFromParts(parts []Part) []SourcePart {
 	return sources
 }
 
-func performanceFromTimings(stepStarted, responseFinished, toolsFinished time.Time, usage Usage, ttft time.Duration) StepPerformance {
+func performanceFromTimings(stepStarted, responseFinished, toolsFinished time.Time, usage Usage, timeToFirstOutput time.Duration, outputChunkGaps []time.Duration) StepPerformance {
 	now := time.Now()
 	if toolsFinished.IsZero() {
 		toolsFinished = responseFinished
@@ -115,10 +116,12 @@ func performanceFromTimings(stepStarted, responseFinished, toolsFinished time.Ti
 		responseFinished = toolsFinished
 	}
 	perf := StepPerformance{
-		StepTime:               toolsFinished.Sub(stepStarted),
-		ResponseTime:           responseFinished.Sub(stepStarted),
-		ToolExecutionTime:      toolsFinished.Sub(responseFinished),
-		TimeToFirstOutputToken: ttft,
+		StepTime:                toolsFinished.Sub(stepStarted),
+		ResponseTime:            responseFinished.Sub(stepStarted),
+		ToolExecutionTime:       toolsFinished.Sub(responseFinished),
+		TimeToFirstOutput:       timeToFirstOutput,
+		TimeToFirstOutputToken:  timeToFirstOutput,
+		TimeBetweenOutputChunks: calculateOutputChunkTimingStats(outputChunkGaps),
 	}
 	seconds := perf.StepTime.Seconds()
 	if seconds <= 0 {
@@ -138,6 +141,40 @@ func performanceFromTimings(stepStarted, responseFinished, toolsFinished time.Ti
 		perf.EffectiveTotalTokensPerSecond = &v
 	}
 	return perf
+}
+
+func calculateOutputChunkTimingStats(gaps []time.Duration) *OutputChunkTimingStats {
+	if len(gaps) == 0 {
+		return nil
+	}
+	sorted := append([]time.Duration(nil), gaps...)
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i] < sorted[j] })
+	var sum time.Duration
+	for _, gap := range gaps {
+		sum += gap
+	}
+	return &OutputChunkTimingStats{
+		Min:    sorted[0],
+		P10:    nearestRankDuration(sorted, 0.10),
+		Median: nearestRankDuration(sorted, 0.50),
+		Avg:    time.Duration(int64(sum) / int64(len(gaps))),
+		P90:    nearestRankDuration(sorted, 0.90),
+		Max:    sorted[len(sorted)-1],
+	}
+}
+
+func nearestRankDuration(sorted []time.Duration, percentile float64) time.Duration {
+	if len(sorted) == 0 {
+		return 0
+	}
+	index := int(percentile*float64(len(sorted))+0.999999999) - 1
+	if index < 0 {
+		index = 0
+	}
+	if index >= len(sorted) {
+		index = len(sorted) - 1
+	}
+	return sorted[index]
 }
 
 func mustJSON(v any) string {
