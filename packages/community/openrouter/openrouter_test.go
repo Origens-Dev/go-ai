@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"reflect"
 	"testing"
 
 	"github.com/holbrookab/go-ai/packages/ai"
@@ -50,6 +51,91 @@ func TestDoGenerateConvertsOpenRouterChat(t *testing.T) {
 	}
 	if len(result.Content) != 2 {
 		t.Fatalf("expected reasoning and tool call, got %#v", result.Content)
+	}
+}
+
+func TestDoGenerateSendsJSONSchemaResponseFormatWhenSchemaPresent(t *testing.T) {
+	var request map[string]any
+	client := fakeDoer{do: func(r *http.Request) (*http.Response, error) {
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		return jsonResponse(`{
+			"id":"chatcmpl_1",
+			"model":"openai/gpt-test",
+			"choices":[{"finish_reason":"stop","message":{"content":"{\"name\":\"Ada\"}"}}],
+			"usage":{"prompt_tokens":2,"completion_tokens":3,"total_tokens":5}
+		}`), nil
+	}}
+
+	schema := map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"name": map[string]any{"type": "string"},
+		},
+		"required":             []any{"name"},
+		"additionalProperties": false,
+	}
+	provider := New(Settings{APIKey: "test-key", BaseURL: "https://openrouter.test/api/v1", Client: client})
+	_, err := provider.LanguageModel("openai/gpt-test").DoGenerate(context.Background(), ai.LanguageModelCallOptions{
+		Prompt: []ai.Message{ai.UserMessage("hi")},
+		ResponseFormat: &ai.ResponseFormat{
+			Type:        "json",
+			Schema:      schema,
+			Name:        "person",
+			Description: "A generated person.",
+		},
+	})
+	if err != nil {
+		t.Fatalf("DoGenerate failed: %v", err)
+	}
+	format, ok := request["response_format"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected response_format object, got %#v", request["response_format"])
+	}
+	if format["type"] != "json_schema" {
+		t.Fatalf("expected json_schema response format, got %#v", format)
+	}
+	jsonSchema, ok := format["json_schema"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected json_schema object, got %#v", format["json_schema"])
+	}
+	if jsonSchema["name"] != "person" || jsonSchema["description"] != "A generated person." || jsonSchema["strict"] != true {
+		t.Fatalf("unexpected json_schema metadata: %#v", jsonSchema)
+	}
+	if !reflect.DeepEqual(jsonSchema["schema"], schema) {
+		t.Fatalf("expected schema %#v, got %#v", schema, jsonSchema["schema"])
+	}
+}
+
+func TestDoGenerateSendsJSONObjectResponseFormatWhenSchemaNil(t *testing.T) {
+	var request map[string]any
+	client := fakeDoer{do: func(r *http.Request) (*http.Response, error) {
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		return jsonResponse(`{
+			"id":"chatcmpl_1",
+			"model":"openai/gpt-test",
+			"choices":[{"finish_reason":"stop","message":{"content":"{}"}}],
+			"usage":{"prompt_tokens":2,"completion_tokens":3,"total_tokens":5}
+		}`), nil
+	}}
+
+	provider := New(Settings{APIKey: "test-key", BaseURL: "https://openrouter.test/api/v1", Client: client})
+	_, err := provider.LanguageModel("openai/gpt-test").DoGenerate(context.Background(), ai.LanguageModelCallOptions{
+		Prompt:         []ai.Message{ai.UserMessage("hi")},
+		ResponseFormat: &ai.ResponseFormat{Type: "json"},
+	})
+	if err != nil {
+		t.Fatalf("DoGenerate failed: %v", err)
+	}
+	format, ok := request["response_format"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected response_format object, got %#v", request["response_format"])
+	}
+	if !reflect.DeepEqual(format, map[string]any{"type": "json_object"}) {
+		t.Fatalf("expected json_object response format, got %#v", format)
 	}
 }
 

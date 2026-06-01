@@ -128,8 +128,8 @@ func (m *LanguageModel) buildBody(opts ai.LanguageModelCallOptions, stream bool)
 	if len(opts.StopSequences) > 0 {
 		body["stop"] = opts.StopSequences
 	}
-	if opts.ResponseFormat != nil && opts.ResponseFormat.Type == "json" {
-		body["response_format"] = map[string]any{"type": "json_object"}
+	if responseFormat := openAIResponseFormat(opts.ResponseFormat); responseFormat != nil {
+		body["response_format"] = responseFormat
 	}
 	if len(opts.Tools) > 0 {
 		body["tools"] = openAITools(opts.Tools)
@@ -141,6 +141,31 @@ func (m *LanguageModel) buildBody(opts ai.LanguageModelCallOptions, stream bool)
 		body[k] = v
 	}
 	return body
+}
+
+func openAIResponseFormat(format *ai.ResponseFormat) any {
+	if format == nil || format.Type != "json" {
+		return nil
+	}
+	if format.Schema == nil {
+		return map[string]any{"type": "json_object"}
+	}
+	name := format.Name
+	if name == "" {
+		name = "response"
+	}
+	jsonSchema := map[string]any{
+		"name":   name,
+		"schema": format.Schema,
+		"strict": true,
+	}
+	if format.Description != "" {
+		jsonSchema["description"] = format.Description
+	}
+	return map[string]any{
+		"type":        "json_schema",
+		"json_schema": jsonSchema,
+	}
 }
 
 func (m *LanguageModel) post(ctx context.Context, path string, body any, headers map[string]string) ([]byte, map[string]string, error) {

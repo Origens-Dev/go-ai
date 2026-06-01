@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.7 - 2026-06-01
+
+- Fixed the OpenRouter community connector to send schema-constrained structured output requests when `ResponseFormat.Schema` is present, while preserving JSON-object mode when no schema is supplied.
+
 ## 0.2.6 - 2026-06-01
 
 - Added standalone stream conversion helpers for text and UI message streams.
