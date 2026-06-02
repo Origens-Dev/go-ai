@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.8 - 2026-06-01
+
+- Added OpenRouter structured-output strictness override support while keeping
+  strict JSON schema mode enabled by default.
+- Added focused OpenRouter request-body coverage to verify nested schemas are
+  preserved for `GenerateObject` and provider routing options pass through.
+
 ## 0.2.7 - 2026-06-01
 
 - Fixed the OpenRouter community connector to send schema-constrained structured output requests when `ResponseFormat.Schema` is present, while preserving JSON-object mode when no schema is supplied.

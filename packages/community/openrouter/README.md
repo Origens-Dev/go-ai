@@ -20,6 +20,7 @@ result, err := ai.GenerateText(ctx, ai.GenerateTextOptions{
 - `OPENROUTER_API_KEY`, custom base URL, headers, and HTTP client;
 - OpenAI-style tool calls and tool results;
 - OpenRouter provider options under `ProviderOptions["openrouter"]` or `ProviderOptions["openrouter.chat"]`;
+- structured-output schema strictness defaults to `true` and can be changed with `ProviderOptions["openrouter"]["structuredOutputs"]["strict"]`;
 - provider metadata for model, usage, reasoning details, and OpenRouter usage/cost payloads when returned by the API.
 
 Community connectors are tested and documented, but they may lag first-class provider parity when upstream provider APIs change quickly.

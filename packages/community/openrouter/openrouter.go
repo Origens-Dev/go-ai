@@ -128,7 +128,7 @@ func (m *LanguageModel) buildBody(opts ai.LanguageModelCallOptions, stream bool)
 	if len(opts.StopSequences) > 0 {
 		body["stop"] = opts.StopSequences
 	}
-	if responseFormat := openAIResponseFormat(opts.ResponseFormat); responseFormat != nil {
+	if responseFormat := openAIResponseFormat(opts.ResponseFormat, opts.ProviderOptions); responseFormat != nil {
 		body["response_format"] = responseFormat
 	}
 	if len(opts.Tools) > 0 {
@@ -143,7 +143,7 @@ func (m *LanguageModel) buildBody(opts ai.LanguageModelCallOptions, stream bool)
 	return body
 }
 
-func openAIResponseFormat(format *ai.ResponseFormat) any {
+func openAIResponseFormat(format *ai.ResponseFormat, options ai.ProviderOptions) any {
 	if format == nil || format.Type != "json" {
 		return nil
 	}
@@ -157,7 +157,7 @@ func openAIResponseFormat(format *ai.ResponseFormat) any {
 	jsonSchema := map[string]any{
 		"name":   name,
 		"schema": format.Schema,
-		"strict": true,
+		"strict": openRouterStructuredOutputStrict(options),
 	}
 	if format.Description != "" {
 		jsonSchema["description"] = format.Description
@@ -166,6 +166,26 @@ func openAIResponseFormat(format *ai.ResponseFormat) any {
 		"type":        "json_schema",
 		"json_schema": jsonSchema,
 	}
+}
+
+func openRouterStructuredOutputStrict(options ai.ProviderOptions) bool {
+	strictValue := true
+	for _, key := range []string{"openrouter", "openrouter.chat"} {
+		raw, ok := options[key].(map[string]any)
+		if !ok {
+			continue
+		}
+		for _, optionKey := range []string{"structuredOutputs", "structured_outputs"} {
+			structured, ok := raw[optionKey].(map[string]any)
+			if !ok {
+				continue
+			}
+			if strict, ok := structured["strict"].(bool); ok {
+				strictValue = strict
+			}
+		}
+	}
+	return strictValue
 }
 
 func (m *LanguageModel) post(ctx context.Context, path string, body any, headers map[string]string) ([]byte, map[string]string, error) {
@@ -564,6 +584,9 @@ func openRouterOptions(options ai.ProviderOptions) map[string]any {
 	for _, key := range []string{"openrouter", "openrouter.chat"} {
 		if raw, ok := options[key].(map[string]any); ok {
 			for k, v := range raw {
+				if k == "structuredOutputs" || k == "structured_outputs" {
+					continue
+				}
 				out[k] = v
 			}
 		}

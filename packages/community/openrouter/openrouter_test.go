@@ -108,6 +108,140 @@ func TestDoGenerateSendsJSONSchemaResponseFormatWhenSchemaPresent(t *testing.T) 
 	}
 }
 
+func TestGenerateObjectPreservesNestedJSONSchemaResponseFormat(t *testing.T) {
+	var request map[string]any
+	client := fakeDoer{do: func(r *http.Request) (*http.Response, error) {
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		return jsonResponse(`{
+			"id":"chatcmpl_1",
+			"model":"google/gemini-test",
+			"choices":[{"finish_reason":"stop","message":{"content":"{\"compiledDefinition\":{\"definition\":{\"startsWhen\":\"After intake is complete\"}}}"}}],
+			"usage":{"prompt_tokens":2,"completion_tokens":3,"total_tokens":5}
+		}`), nil
+	}}
+
+	schema := map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"compiledDefinition": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"definition": map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"startsWhen": map[string]any{"type": "string"},
+						},
+						"required":             []any{"startsWhen"},
+						"additionalProperties": false,
+					},
+				},
+				"required":             []any{"definition"},
+				"additionalProperties": false,
+			},
+		},
+		"required":             []any{"compiledDefinition"},
+		"additionalProperties": false,
+	}
+	provider := New(Settings{APIKey: "test-key", BaseURL: "https://openrouter.test/api/v1", Client: client})
+	_, err := ai.GenerateObject(context.Background(), ai.GenerateObjectOptions{
+		Model:      provider.LanguageModel("google/gemini-test"),
+		Output:     ai.OutputObject,
+		Mode:       ai.ObjectModeJSON,
+		Schema:     schema,
+		SchemaName: "routine_stepgen_outline",
+		Prompt:     "Generate an outline.",
+		ProviderOptions: ai.ProviderOptions{"openrouter": map[string]any{
+			"provider": map[string]any{"require_parameters": true},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("GenerateObject failed: %v", err)
+	}
+
+	wantFormat := map[string]any{
+		"type": "json_schema",
+		"json_schema": map[string]any{
+			"name":   "routine_stepgen_outline",
+			"schema": schema,
+			"strict": true,
+		},
+	}
+	if !reflect.DeepEqual(request["response_format"], wantFormat) {
+		t.Fatalf("unexpected response_format:\nwant %#v\n got %#v", wantFormat, request["response_format"])
+	}
+	providerOptions, ok := request["provider"].(map[string]any)
+	if !ok || providerOptions["require_parameters"] != true {
+		t.Fatalf("expected provider.require_parameters passthrough, got %#v", request["provider"])
+	}
+	sentSchema := request["response_format"].(map[string]any)["json_schema"].(map[string]any)["schema"].(map[string]any)
+	compiled := sentSchema["properties"].(map[string]any)["compiledDefinition"].(map[string]any)
+	definition := compiled["properties"].(map[string]any)["definition"].(map[string]any)
+	if !reflect.DeepEqual(definition["required"], []any{"startsWhen"}) {
+		t.Fatalf("nested required changed: %#v", definition["required"])
+	}
+	if _, ok := definition["properties"].(map[string]any)["startsWhen"]; !ok {
+		t.Fatalf("nested startsWhen property missing: %#v", definition["properties"])
+	}
+}
+
+func TestDoGenerateAllowsStructuredOutputStrictOverride(t *testing.T) {
+	var request map[string]any
+	client := fakeDoer{do: func(r *http.Request) (*http.Response, error) {
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		return jsonResponse(`{
+			"id":"chatcmpl_1",
+			"model":"openai/gpt-test",
+			"choices":[{"finish_reason":"stop","message":{"content":"{\"name\":\"Ada\"}"}}],
+			"usage":{"prompt_tokens":2,"completion_tokens":3,"total_tokens":5}
+		}`), nil
+	}}
+
+	schema := map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"name": map[string]any{"type": "string"},
+		},
+		"required":             []any{"name"},
+		"additionalProperties": false,
+	}
+	provider := New(Settings{APIKey: "test-key", BaseURL: "https://openrouter.test/api/v1", Client: client})
+	_, err := provider.LanguageModel("openai/gpt-test").DoGenerate(context.Background(), ai.LanguageModelCallOptions{
+		Prompt: []ai.Message{ai.UserMessage("hi")},
+		ResponseFormat: &ai.ResponseFormat{
+			Type:   "json",
+			Schema: schema,
+			Name:   "person",
+		},
+		ProviderOptions: ai.ProviderOptions{
+			"openrouter": map[string]any{
+				"structuredOutputs": map[string]any{"strict": true},
+				"reasoning":         map[string]any{"effort": "low"},
+			},
+			"openrouter.chat": map[string]any{
+				"structuredOutputs": map[string]any{"strict": false},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("DoGenerate failed: %v", err)
+	}
+	format := request["response_format"].(map[string]any)
+	jsonSchema := format["json_schema"].(map[string]any)
+	if jsonSchema["strict"] != false {
+		t.Fatalf("expected strict override false, got %#v", jsonSchema["strict"])
+	}
+	if request["structuredOutputs"] != nil {
+		t.Fatalf("structuredOutputs helper option leaked into request: %#v", request)
+	}
+	if request["reasoning"] == nil {
+		t.Fatalf("expected regular openrouter option passthrough: %#v", request)
+	}
+}
+
 func TestDoGenerateSendsJSONObjectResponseFormatWhenSchemaNil(t *testing.T) {
 	var request map[string]any
 	client := fakeDoer{do: func(r *http.Request) (*http.Response, error) {
