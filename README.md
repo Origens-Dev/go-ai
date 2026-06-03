@@ -86,6 +86,9 @@ Bedrock auth follows the upstream SDK precedence: explicit API key, `AWS_BEARER_
 Vertex auth uses `GOOGLE_VERTEX_API_KEY` or explicit API key for Express Mode. Otherwise it uses an injected token source, `GOOGLE_VERTEX_ACCESS_TOKEN`, service account JSON from `GOOGLE_APPLICATION_CREDENTIALS`, or the metadata server.
 
 OpenRouter community auth uses an explicit API key or `OPENROUTER_API_KEY`.
+Its connector also supports OpenRouter app attribution with `AppName`,
+`AppURL`, and `AppCategories`, plus chat session attribution with `SessionID`
+or provider options such as `ProviderOptions["openrouter"]["sessionId"]`.
 
 ## Provider Boundaries
 

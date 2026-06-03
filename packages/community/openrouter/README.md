@@ -5,6 +5,8 @@
 ```go
 provider := openrouter.New(openrouter.Settings{
 	APIKey: os.Getenv("OPENROUTER_API_KEY"),
+	AppName: "My Go Agent",
+	AppURL:  "https://example.com",
 })
 
 result, err := ai.GenerateText(ctx, ai.GenerateTextOptions{
@@ -18,6 +20,10 @@ result, err := ai.GenerateText(ctx, ai.GenerateTextOptions{
 - OpenAI-compatible chat generation and streaming through `/api/v1/chat/completions`;
 - embeddings through `/api/v1/embeddings`;
 - `OPENROUTER_API_KEY`, custom base URL, headers, and HTTP client;
+- app attribution via `AppName`, `AppURL`, and `AppCategories`, which send
+  `X-OpenRouter-Title`, `HTTP-Referer`, and `X-OpenRouter-Categories`;
+- chat session attribution via `SessionID`, raw `session_id`, or upstream-style
+  `ProviderOptions["openrouter"]["sessionId"]`;
 - OpenAI-style tool calls and tool results;
 - OpenRouter provider options under `ProviderOptions["openrouter"]` or `ProviderOptions["openrouter.chat"]`;
 - structured-output schema strictness defaults to `true` and can be changed with `ProviderOptions["openrouter"]["structuredOutputs"]["strict"]`;

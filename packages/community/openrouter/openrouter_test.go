@@ -54,6 +54,86 @@ func TestDoGenerateConvertsOpenRouterChat(t *testing.T) {
 	}
 }
 
+func TestDoGenerateSendsOpenRouterSessionAndAppAttribution(t *testing.T) {
+	var request map[string]any
+	client := fakeDoer{do: func(r *http.Request) (*http.Response, error) {
+		if r.Header.Get("HTTP-Referer") != "https://example.test" {
+			t.Fatalf("expected HTTP-Referer attribution header, got %#v", r.Header)
+		}
+		if r.Header.Get("X-OpenRouter-Title") != "Example Agent" {
+			t.Fatalf("expected title attribution header, got %#v", r.Header)
+		}
+		if r.Header.Get("X-OpenRouter-Categories") != "agent,productivity" {
+			t.Fatalf("expected category attribution header, got %#v", r.Header)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		return jsonResponse(`{
+			"id":"chatcmpl_1",
+			"model":"openai/gpt-test",
+			"choices":[{"finish_reason":"stop","message":{"content":"hi"}}],
+			"usage":{"prompt_tokens":2,"completion_tokens":3,"total_tokens":5}
+		}`), nil
+	}}
+
+	provider := New(Settings{
+		APIKey:        "test-key",
+		BaseURL:       "https://openrouter.test/api/v1",
+		SessionID:     "session-provider",
+		AppName:       "Example Agent",
+		AppURL:        "https://example.test",
+		AppCategories: []string{"agent", "productivity"},
+		Client:        client,
+	})
+	_, err := provider.LanguageModel("openai/gpt-test").DoGenerate(context.Background(), ai.LanguageModelCallOptions{
+		Prompt: []ai.Message{ai.UserMessage("hi")},
+	})
+	if err != nil {
+		t.Fatalf("DoGenerate failed: %v", err)
+	}
+	if request["session_id"] != "session-provider" {
+		t.Fatalf("expected settings session_id, got %#v", request)
+	}
+}
+
+func TestDoGenerateNormalizesOpenRouterSessionIDProviderOption(t *testing.T) {
+	var request map[string]any
+	client := fakeDoer{do: func(r *http.Request) (*http.Response, error) {
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		return jsonResponse(`{
+			"id":"chatcmpl_1",
+			"model":"openai/gpt-test",
+			"choices":[{"finish_reason":"stop","message":{"content":"hi"}}],
+			"usage":{"prompt_tokens":2,"completion_tokens":3,"total_tokens":5}
+		}`), nil
+	}}
+
+	provider := New(Settings{
+		APIKey:    "test-key",
+		BaseURL:   "https://openrouter.test/api/v1",
+		SessionID: "session-provider",
+		Client:    client,
+	})
+	_, err := provider.LanguageModel("openai/gpt-test").DoGenerate(context.Background(), ai.LanguageModelCallOptions{
+		Prompt: []ai.Message{ai.UserMessage("hi")},
+		ProviderOptions: ai.ProviderOptions{"openrouter": map[string]any{
+			"sessionId": "session-call",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("DoGenerate failed: %v", err)
+	}
+	if request["session_id"] != "session-call" {
+		t.Fatalf("expected provider option session_id override, got %#v", request)
+	}
+	if request["sessionId"] != nil {
+		t.Fatalf("camelCase helper option leaked into request: %#v", request)
+	}
+}
+
 func TestDoGenerateSendsJSONSchemaResponseFormatWhenSchemaPresent(t *testing.T) {
 	var request map[string]any
 	client := fakeDoer{do: func(r *http.Request) (*http.Response, error) {

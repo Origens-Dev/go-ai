@@ -19,10 +19,14 @@ import (
 const defaultBaseURL = "https://openrouter.ai/api/v1"
 
 type Settings struct {
-	APIKey  string
-	BaseURL string
-	Headers map[string]string
-	Client  httputil.Doer
+	APIKey        string
+	BaseURL       string
+	SessionID     string
+	AppName       string
+	AppURL        string
+	AppCategories []string
+	Headers       map[string]string
+	Client        httputil.Doer
 }
 
 type Provider struct {
@@ -115,6 +119,9 @@ func (m *LanguageModel) buildBody(opts ai.LanguageModelCallOptions, stream bool)
 		"model":    m.modelID,
 		"messages": openAIMessages(opts.Prompt),
 		"stream":   stream,
+	}
+	if sessionID := strings.TrimSpace(m.provider.settings.SessionID); sessionID != "" {
+		body["session_id"] = sessionID
 	}
 	if opts.MaxOutputTokens != nil {
 		body["max_tokens"] = *opts.MaxOutputTokens
@@ -289,16 +296,44 @@ func (p *Provider) headers(headers map[string]string) map[string]string {
 	for k, v := range headers {
 		out[k] = v
 	}
-	if out["User-Agent"] == "" {
-		out["User-Agent"] = "go-ai/openrouter/" + ai.Version
+	setHeaderDefault(out, "User-Agent", "go-ai/openrouter/"+ai.Version)
+	setHeaderDefault(out, "HTTP-Referer", p.settings.AppURL)
+	setHeaderDefault(out, "X-OpenRouter-Title", p.settings.AppName)
+	if len(p.settings.AppCategories) > 0 && !hasHeader(out, "X-OpenRouter-Categories") {
+		categories := make([]string, 0, len(p.settings.AppCategories))
+		for _, category := range p.settings.AppCategories {
+			if category = strings.TrimSpace(category); category != "" {
+				categories = append(categories, category)
+			}
+		}
+		if len(categories) > 0 {
+			out["X-OpenRouter-Categories"] = strings.Join(categories, ",")
+		}
 	}
-	if out["Authorization"] == "" {
+	if !hasHeader(out, "Authorization") {
 		key := strings.TrimSpace(firstString(p.settings.APIKey, os.Getenv("OPENROUTER_API_KEY")))
 		if key != "" {
 			out["Authorization"] = "Bearer " + key
 		}
 	}
 	return out
+}
+
+func setHeaderDefault(headers map[string]string, key, value string) {
+	value = strings.TrimSpace(value)
+	if value == "" || hasHeader(headers, key) {
+		return
+	}
+	headers[key] = value
+}
+
+func hasHeader(headers map[string]string, key string) bool {
+	for candidate := range headers {
+		if strings.EqualFold(candidate, key) {
+			return true
+		}
+	}
+	return false
 }
 
 func openAIMessages(messages []ai.Message) []map[string]any {
@@ -583,8 +618,16 @@ func openRouterOptions(options ai.ProviderOptions) map[string]any {
 	out := map[string]any{}
 	for _, key := range []string{"openrouter", "openrouter.chat"} {
 		if raw, ok := options[key].(map[string]any); ok {
+			if sessionID, ok := raw["sessionId"]; ok {
+				if _, hasSnakeCase := raw["session_id"]; !hasSnakeCase {
+					out["session_id"] = sessionID
+				}
+			}
 			for k, v := range raw {
 				if k == "structuredOutputs" || k == "structured_outputs" {
+					continue
+				}
+				if k == "sessionId" {
 					continue
 				}
 				out[k] = v

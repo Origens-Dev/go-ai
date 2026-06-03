@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.9 - 2026-06-03
+
+- Added OpenRouter app attribution settings and chat session ID support to the
+  community connector, including upstream-style `sessionId` provider option
+  normalization.
+
 ## 0.2.8 - 2026-06-01
 
 - Added OpenRouter structured-output strictness override support while keeping
