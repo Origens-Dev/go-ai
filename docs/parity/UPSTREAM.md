@@ -5,17 +5,17 @@ This repo tracks Vercel AI SDK `main` as the upstream behavioral reference.
 | Field | Value |
 | --- | --- |
 | Upstream checkout | Local `/Users/dholbrook/src/ai` refreshed from GitHub `vercel/ai` `main` |
-| Upstream package version | `ai@7.0.0-canary.159` |
-| Upstream commit | `ab6d66482` |
+| Upstream package version | `ai@7.0.20` |
+| Upstream commit | `58d77caf6733f49431b0864bd71adbe143958aeb` |
 | Upstream working tree | Local checkout, clean after fast-forward |
-| Checked on | 2026-06-01 |
+| Checked on | 2026-07-10 |
 | Go module | `github.com/holbrookab/go-ai` |
 
 ## Compared Scope
 
 Primary scope:
 
-- `packages/ai/src` at `vercel/ai@ab6d66482`
+- `packages/ai/src` at `vercel/ai@58d77caf6733f49431b0864bd71adbe143958aeb`
 - `packages/amazon-bedrock`
 - `packages/anthropic`
 - `packages/google-vertex`
@@ -25,7 +25,7 @@ Community-provider comparison scope:
 
 - OpenRouter's community AI SDK provider repository, used as the behavioral reference for `packages/community/openrouter`
 
-The high-signal upstream delta since the prior canary.152 automation baseline is concentrated in core `packages/ai`: standalone stream conversion helpers, `OnEnd` and abort callback semantics, language-model-call telemetry wrapping, sandbox process spawning, output chunk timing metrics, and `output-error` UI message replay validation.
+The high-signal delta since canary.159 includes signed approval replay, client-error redaction, download SSRF hardening, deterministic tool ordering, tool-definition drift detection, stable lifecycle callbacks, empty-stream rejection, streaming JSON extraction, streaming transcription, expanded video inputs, and experimental realtime APIs. The P0/P1 server-side core items are ported; streaming transcription, expanded video generation, and browser-oriented realtime work remain outside this baseline update.
 
 Current Go implementation scope:
 

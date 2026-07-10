@@ -40,7 +40,9 @@ type StreamTextUIMessageStreamOptions struct {
 	MessageMetadata  any
 	OriginalMessages []UIMessage
 	GenerateID       func() string
+	OnStepEnd        func(UIMessageStreamStepFinishEvent) error
 	OnStepFinish     func(UIMessageStreamStepFinishEvent) error
+	OnEnd            func(UIMessageStreamFinishEvent) error
 	OnFinish         func(UIMessageStreamFinishEvent) error
 	OnError          func(error) string
 	Tools            map[string]Tool
@@ -70,7 +72,9 @@ func CreateStreamTextUIMessageStream(ctx context.Context, result *StreamTextResu
 		},
 		OriginalMessages: opts.OriginalMessages,
 		GenerateID:       opts.GenerateID,
+		OnStepEnd:        opts.OnStepEnd,
 		OnStepFinish:     opts.OnStepFinish,
+		OnEnd:            opts.OnEnd,
 		OnFinish:         opts.OnFinish,
 		BufferSize:       opts.BufferSize,
 	})
@@ -94,7 +98,9 @@ func writeStreamTextResultAsUIMessageChunks(ctx context.Context, writer UIMessag
 		},
 		OriginalMessages: opts.OriginalMessages,
 		GenerateID:       opts.GenerateID,
+		OnStepEnd:        opts.OnStepEnd,
 		OnStepFinish:     opts.OnStepFinish,
+		OnEnd:            opts.OnEnd,
 		OnFinish:         opts.OnFinish,
 		BufferSize:       opts.BufferSize,
 	}) {

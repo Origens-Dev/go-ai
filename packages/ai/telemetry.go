@@ -109,6 +109,13 @@ func endCallback(onEnd, onFinish func(FinishEvent)) func(FinishEvent) {
 	return onFinish
 }
 
+func stepEndCallback(onStepEnd, onStepFinish func(StepFinishEvent)) func(StepFinishEvent) {
+	if onStepEnd != nil {
+		return onStepEnd
+	}
+	return onStepFinish
+}
+
 func emitAbortEvent(ctx context.Context, telemetry Telemetry, opts TelemetryOptions, cb func(AbortEvent), name, operation string, steps []*StepResult, reason any) {
 	callID := ""
 	if len(steps) > 0 && steps[len(steps)-1] != nil {

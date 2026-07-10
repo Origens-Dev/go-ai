@@ -64,6 +64,72 @@ func TestStreamTextRunsToolLoop(t *testing.T) {
 	}
 }
 
+func TestStreamTextRejectsEmptyProviderStream(t *testing.T) {
+	model := &sequenceModel{stream: func(LanguageModelCallOptions) (*LanguageModelStreamResult, error) {
+		stream := make(chan StreamPart)
+		close(stream)
+		return &LanguageModelStreamResult{Stream: stream}, nil
+	}}
+	result, err := StreamText(context.Background(), StreamTextOptions{GenerateTextOptions: GenerateTextOptions{Model: model, Prompt: "hello"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var streamErr error
+	for part := range result.Stream {
+		if part.Type == "error" {
+			streamErr = part.Err
+		}
+	}
+	if !IsNoOutputGeneratedError(streamErr) {
+		t.Fatalf("expected no output error, got %T %v", streamErr, streamErr)
+	}
+	if len(result.Steps) != 0 {
+		t.Fatalf("empty stream created a step: %#v", result.Steps)
+	}
+}
+
+func TestStreamTextReplaysApprovedTool(t *testing.T) {
+	input := map[string]any{"city": "NYC"}
+	signature, err := SignToolApproval([]byte("secret"), "approval-1", "call-1", "weather", input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	executed := false
+	model := &sequenceModel{stream: func(opts LanguageModelCallOptions) (*LanguageModelStreamResult, error) {
+		if opts.Prompt[len(opts.Prompt)-1].Role != RoleTool {
+			t.Fatalf("missing replay result: %#v", opts.Prompt)
+		}
+		stream := make(chan StreamPart, 2)
+		stream <- StreamPart{Type: "text-delta", TextDelta: "sunny"}
+		stream <- StreamPart{Type: "finish", FinishReason: FinishReason{Unified: FinishStop}}
+		close(stream)
+		return &LanguageModelStreamResult{Stream: stream}, nil
+	}}
+	result, err := StreamText(context.Background(), StreamTextOptions{GenerateTextOptions: GenerateTextOptions{
+		Model: model, ToolApprovalSecret: []byte("secret"),
+		Messages: []Message{
+			{Role: RoleAssistant, Content: []Part{ToolCallPart{ToolCallID: "call-1", ToolName: "weather", Input: input}, ToolApprovalRequestPart{ApprovalID: "approval-1", ToolCallID: "call-1", Signature: signature}}},
+			{Role: RoleTool, Content: []Part{ToolApprovalResponsePart{ApprovalID: "approval-1", Approved: true}}},
+		},
+		Tools: map[string]Tool{"weather": {RequiresApproval: true, InputSchema: map[string]any{"type": "object"}, Execute: func(context.Context, ToolCall, ToolExecutionOptions) (any, error) {
+			executed = true
+			return "sunny", nil
+		}}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	toolResultSeen := false
+	for part := range result.Stream {
+		if part.Type == "tool-result" {
+			toolResultSeen = true
+		}
+	}
+	if !executed || !toolResultSeen || len(result.ToolResults) == 0 {
+		t.Fatalf("executed=%v streamed=%v results=%#v", executed, toolResultSeen, result.ToolResults)
+	}
+}
+
 func TestStreamTextPerformanceCountsToolCallAsFirstOutput(t *testing.T) {
 	model := &sequenceModel{stream: func(opts LanguageModelCallOptions) (*LanguageModelStreamResult, error) {
 		ch := make(chan StreamPart, 2)
@@ -256,6 +322,7 @@ func TestStreamTextPreservesTextDeltaProviderMetadata(t *testing.T) {
 
 func TestStreamTextEmitsAbortOnContextCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	model := NewMockLanguageModel("stream-abort")
 	model.StreamFunc = func(ctx context.Context, opts LanguageModelCallOptions) (*LanguageModelStreamResult, error) {
 		ch := make(chan StreamPart)

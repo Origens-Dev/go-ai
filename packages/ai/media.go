@@ -14,6 +14,7 @@ type GenerateImageOptions struct {
 	Telemetry        Telemetry
 	TelemetryOptions TelemetryOptions
 	OnStart          func(StartEvent)
+	OnEnd            func(FinishEvent)
 	OnFinish         func(FinishEvent)
 	OnError          func(ErrorEvent)
 }
@@ -66,7 +67,7 @@ func GenerateImage(ctx context.Context, opts GenerateImageOptions) (imageResult 
 		ProviderMetadata: result.ProviderMetadata,
 		Response:         result.Response,
 	}
-	emitFinish(ctx, opts.Telemetry, opts.TelemetryOptions, opts.OnFinish, EventGenerateImageFinish, OperationGenerateImage, imageResult, map[string]any{
+	emitFinish(ctx, opts.Telemetry, opts.TelemetryOptions, endCallback(opts.OnEnd, opts.OnFinish), EventGenerateImageFinish, OperationGenerateImage, imageResult, map[string]any{
 		"image_count": len(imageResult.Images),
 	})
 	return imageResult, nil
@@ -85,6 +86,7 @@ type GenerateVideoOptions struct {
 	Telemetry        Telemetry
 	TelemetryOptions TelemetryOptions
 	OnStart          func(StartEvent)
+	OnEnd            func(FinishEvent)
 	OnFinish         func(FinishEvent)
 	OnError          func(ErrorEvent)
 }
@@ -139,7 +141,7 @@ func GenerateVideo(ctx context.Context, opts GenerateVideoOptions) (videoResult 
 		ProviderMetadata: result.ProviderMetadata,
 		Response:         result.Response,
 	}
-	emitFinish(ctx, opts.Telemetry, opts.TelemetryOptions, opts.OnFinish, EventGenerateVideoFinish, OperationGenerateVideo, videoResult, map[string]any{
+	emitFinish(ctx, opts.Telemetry, opts.TelemetryOptions, endCallback(opts.OnEnd, opts.OnFinish), EventGenerateVideoFinish, OperationGenerateVideo, videoResult, map[string]any{
 		"video_count": len(videoResult.Videos),
 	})
 	return videoResult, nil
@@ -155,6 +157,7 @@ type GenerateSpeechOptions struct {
 	Telemetry        Telemetry
 	TelemetryOptions TelemetryOptions
 	OnStart          func(StartEvent)
+	OnEnd            func(FinishEvent)
 	OnFinish         func(FinishEvent)
 	OnError          func(ErrorEvent)
 }
@@ -203,7 +206,7 @@ func GenerateSpeech(ctx context.Context, opts GenerateSpeechOptions) (speechResu
 		ProviderMetadata: result.ProviderMetadata,
 		Response:         result.Response,
 	}
-	emitFinish(ctx, opts.Telemetry, opts.TelemetryOptions, opts.OnFinish, EventGenerateSpeechFinish, OperationGenerateSpeech, speechResult, map[string]any{
+	emitFinish(ctx, opts.Telemetry, opts.TelemetryOptions, endCallback(opts.OnEnd, opts.OnFinish), EventGenerateSpeechFinish, OperationGenerateSpeech, speechResult, map[string]any{
 		"media_type": speechResult.Audio.MediaType,
 	})
 	return speechResult, nil
@@ -219,6 +222,7 @@ type TranscribeOptions struct {
 	Telemetry        Telemetry
 	TelemetryOptions TelemetryOptions
 	OnStart          func(StartEvent)
+	OnEnd            func(FinishEvent)
 	OnFinish         func(FinishEvent)
 	OnError          func(ErrorEvent)
 }
@@ -269,7 +273,7 @@ func Transcribe(ctx context.Context, opts TranscribeOptions) (transcribeResult *
 		ProviderMetadata: result.ProviderMetadata,
 		Response:         result.Response,
 	}
-	emitFinish(ctx, opts.Telemetry, opts.TelemetryOptions, opts.OnFinish, EventTranscribeFinish, OperationTranscribe, transcribeResult, map[string]any{
+	emitFinish(ctx, opts.Telemetry, opts.TelemetryOptions, endCallback(opts.OnEnd, opts.OnFinish), EventTranscribeFinish, OperationTranscribe, transcribeResult, map[string]any{
 		"segment_count": len(transcribeResult.Segments),
 	})
 	return transcribeResult, nil
@@ -285,6 +289,7 @@ type RerankOptions struct {
 	Telemetry        Telemetry
 	TelemetryOptions TelemetryOptions
 	OnStart          func(StartEvent)
+	OnEnd            func(FinishEvent)
 	OnFinish         func(FinishEvent)
 	OnError          func(ErrorEvent)
 }
@@ -342,7 +347,7 @@ func Rerank(ctx context.Context, opts RerankOptions) (rerankResult *RerankResult
 		ProviderMetadata:  result.ProviderMetadata,
 		Response:          result.Response,
 	}
-	emitFinish(ctx, opts.Telemetry, opts.TelemetryOptions, opts.OnFinish, EventRerankFinish, OperationRerank, rerankResult, map[string]any{
+	emitFinish(ctx, opts.Telemetry, opts.TelemetryOptions, endCallback(opts.OnEnd, opts.OnFinish), EventRerankFinish, OperationRerank, rerankResult, map[string]any{
 		"result_count": len(rerankResult.Ranking),
 		"usage":        rerankResult.Usage,
 	})

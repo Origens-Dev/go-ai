@@ -31,6 +31,57 @@ func TestExtractJSONMiddlewareGenerateStripsCodeFence(t *testing.T) {
 	}
 }
 
+func TestExtractJSONMiddlewareStreamsFencedJSON(t *testing.T) {
+	model := NewMockLanguageModel("lm")
+	model.StreamFunc = func(context.Context, LanguageModelCallOptions) (*LanguageModelStreamResult, error) {
+		stream := make(chan StreamPart, 4)
+		stream <- StreamPart{Type: "text-start", ID: "text-1"}
+		stream <- StreamPart{Type: "text-delta", ID: "text-1", TextDelta: "```json\n{\"name\":"}
+		stream <- StreamPart{Type: "text-delta", ID: "text-1", TextDelta: "\"Ada\"}\n```"}
+		stream <- StreamPart{Type: "text-end", ID: "text-1"}
+		close(stream)
+		return &LanguageModelStreamResult{Stream: stream}, nil
+	}
+	result, err := WrapLanguageModel(model, ExtractJSONMiddleware()).DoStream(context.Background(), LanguageModelCallOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var text string
+	for part := range result.Stream {
+		if part.Type == "text-delta" {
+			text += part.TextDelta
+		}
+	}
+	if text != `{"name":"Ada"}` {
+		t.Fatalf("text = %q", text)
+	}
+}
+
+func TestExtractJSONMiddlewarePreservesLeadingWhitespaceInFinalSuffix(t *testing.T) {
+	model := NewMockLanguageModel("lm")
+	model.StreamFunc = func(context.Context, LanguageModelCallOptions) (*LanguageModelStreamResult, error) {
+		stream := make(chan StreamPart, 3)
+		stream <- StreamPart{Type: "text-start", ID: "text-1"}
+		stream <- StreamPart{Type: "text-delta", ID: "text-1", TextDelta: "123456789012345  tail"}
+		stream <- StreamPart{Type: "text-end", ID: "text-1"}
+		close(stream)
+		return &LanguageModelStreamResult{Stream: stream}, nil
+	}
+	result, err := WrapLanguageModel(model, ExtractJSONMiddleware()).DoStream(context.Background(), LanguageModelCallOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var text string
+	for part := range result.Stream {
+		if part.Type == "text-delta" {
+			text += part.TextDelta
+		}
+	}
+	if text != "123456789012345  tail" {
+		t.Fatalf("text = %q", text)
+	}
+}
+
 func TestExtractReasoningMiddlewareGenerateSplitsTaggedText(t *testing.T) {
 	model := NewMockLanguageModel("lm")
 	model.GenerateFunc = func(context.Context, LanguageModelCallOptions) (*LanguageModelGenerateResult, error) {

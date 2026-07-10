@@ -61,6 +61,7 @@ type UIMessageChunk struct {
 	Input            any    `json:"input,omitempty"`
 	Output           any    `json:"output,omitempty"`
 	ApprovalID       string `json:"approvalId,omitempty"`
+	Signature        string `json:"signature,omitempty"`
 	Approved         *bool  `json:"approved,omitempty"`
 	IsAutomatic      *bool  `json:"isAutomatic,omitempty"`
 	Reason           string `json:"reason,omitempty"`
@@ -122,12 +123,17 @@ func DataUIMessageChunk(name string, id string, data any) UIMessageChunk {
 	return UIMessageChunk{Type: name, ID: id, Data: data}
 }
 
-func ToolApprovalRequestUIMessageChunk(approvalID string, toolCallID string, isAutomatic bool) UIMessageChunk {
+func ToolApprovalRequestUIMessageChunk(approvalID string, toolCallID string, isAutomatic bool, signature ...string) UIMessageChunk {
+	sig := ""
+	if len(signature) > 0 {
+		sig = signature[0]
+	}
 	return UIMessageChunk{
 		Type:        UIMessageChunkTypeToolApprovalRequest,
 		ApprovalID:  approvalID,
 		ToolCallID:  toolCallID,
 		IsAutomatic: &isAutomatic,
+		Signature:   sig,
 	}
 }
 
@@ -206,7 +212,9 @@ type CreateUIMessageStreamOptions struct {
 	OriginalMessages  []UIMessage
 	ResponseMessageID string
 	GenerateID        func() string
+	OnStepEnd         func(UIMessageStreamStepFinishEvent) error
 	OnStepFinish      func(UIMessageStreamStepFinishEvent) error
+	OnEnd             func(UIMessageStreamFinishEvent) error
 	OnFinish          func(UIMessageStreamFinishEvent) error
 }
 
@@ -248,14 +256,16 @@ func CreateUIMessageStream(opts CreateUIMessageStreamOptions) <-chan UIMessageCh
 		ResponseMessageID: opts.ResponseMessageID,
 		GenerateID:        opts.GenerateID,
 	})
-	if !hasResponseMessageID && opts.OnStepFinish == nil && opts.OnFinish == nil {
+	if !hasResponseMessageID && opts.OnStepEnd == nil && opts.OnStepFinish == nil && opts.OnEnd == nil && opts.OnFinish == nil {
 		return out
 	}
 
 	return HandleUIMessageStreamFinish(out, HandleUIMessageStreamFinishOptions{
 		MessageID:        responseMessageID,
 		OriginalMessages: opts.OriginalMessages,
+		OnStepEnd:        opts.OnStepEnd,
 		OnStepFinish:     opts.OnStepFinish,
+		OnEnd:            opts.OnEnd,
 		OnFinish:         opts.OnFinish,
 		OnError: func(err error) {
 			if opts.OnError != nil {
@@ -575,10 +585,7 @@ func safeWriteUIMessageChunkContext(ctx context.Context, out chan<- UIMessageChu
 }
 
 func defaultUIMessageStreamErrorText(err error) string {
-	if err == nil {
-		return "unknown error"
-	}
-	return err.Error()
+	return "An error occurred."
 }
 
 func chunkIDForValidation(chunk UIMessageChunk) string {

@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.0 - 2026-07-10
+
+- Hardened UI message streams so server errors are redacted by default while explicit error handlers can opt into client-safe detail.
+- Hardened downloads against trailing-dot, legacy numeric IPv4, embedded IPv4/NAT64, CGNAT, reserved, site-local, multicast, and unsafe-redirect SSRF bypasses.
+- Added signed tool approval requests, approval-response replay collection, HMAC verification, input and policy revalidation, denial handling, and UI signature preservation.
+- Added deterministic provider tool ordering with partial `ToolOrder` overrides and alphabetical fallback ordering.
+- Added canonical tool fingerprints and drift detection for server-controlled tool descriptions, titles, and input schemas.
+- Added stable step, language-model-call, and end lifecycle callbacks while preserving finish-named compatibility aliases.
+- Rejects empty provider streams and applies JSON extraction middleware to streamed fenced JSON without trimming valid suffix whitespace.
+- Refreshed the core parity baseline to Vercel AI SDK `ai@7.0.20`.
+
 ## 0.2.9 - 2026-06-03
 
 - Added OpenRouter app attribution settings and chat session ID support to the

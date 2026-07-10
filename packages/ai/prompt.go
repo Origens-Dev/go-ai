@@ -252,6 +252,10 @@ func validateModelMessage(message Message) error {
 				if err := validateToolCallPart(typed); err != nil {
 					return err
 				}
+			case ToolApprovalRequestPart:
+				if typed.ApprovalID == "" || typed.ToolCallID == "" {
+					return &SDKError{Kind: ErrInvalidPrompt, Message: "tool-approval-request part requires approvalID and toolCallID"}
+				}
 			case ToolResultPart:
 				if !typed.ProviderExecuted {
 					return &SDKError{Kind: ErrInvalidPrompt, Message: "assistant message tool-result parts must be provider-executed"}
@@ -273,12 +277,17 @@ func validateModelMessage(message Message) error {
 		}
 	case RoleTool:
 		for _, part := range message.Content {
-			result, ok := part.(ToolResultPart)
-			if !ok {
+			switch typed := part.(type) {
+			case ToolResultPart:
+				if err := validateToolResultPart(typed); err != nil {
+					return err
+				}
+			case ToolApprovalResponsePart:
+				if typed.ApprovalID == "" {
+					return &SDKError{Kind: ErrInvalidPrompt, Message: "tool-approval-response part requires approvalID"}
+				}
+			default:
 				return &SDKError{Kind: ErrInvalidPrompt, Message: fmt.Sprintf("tool message contains unsupported %q part", part.PartType())}
-			}
-			if err := validateToolResultPart(result); err != nil {
-				return err
 			}
 		}
 	case "":

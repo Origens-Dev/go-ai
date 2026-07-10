@@ -132,6 +132,37 @@ type StepFinishEvent struct {
 	Step      *StepResult
 }
 
+type StepStartEvent struct {
+	Operation  string
+	CallID     string
+	StepNumber int
+	Provider   string
+	ModelID    string
+	Messages   []Message
+}
+
+type LanguageModelCallStartEvent struct {
+	Operation  string
+	CallID     string
+	StepNumber int
+	Provider   string
+	ModelID    string
+	Options    LanguageModelCallOptions
+}
+
+type LanguageModelCallEndEvent struct {
+	Operation    string
+	CallID       string
+	StepNumber   int
+	Provider     string
+	ModelID      string
+	Result       any
+	Content      []Part
+	FinishReason FinishReason
+	Usage        Usage
+	Response     ResponseMetadata
+}
+
 type FinishEvent struct {
 	Operation string
 	CallID    string

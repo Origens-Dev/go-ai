@@ -6,12 +6,13 @@ import (
 )
 
 var (
-	ErrInvalidStreamPart           = errors.New("invalid stream part")
-	ErrInvalidToolApproval         = errors.New("invalid tool approval")
-	ErrToolCallNotFoundForApproval = errors.New("tool call not found for approval")
-	ErrToolCallRepair              = errors.New("tool call repair error")
-	ErrUnsupportedModelVersion     = errors.New("unsupported model version")
-	ErrUIMessageStream             = errors.New("ui message stream error")
+	ErrInvalidStreamPart            = errors.New("invalid stream part")
+	ErrInvalidToolApproval          = errors.New("invalid tool approval")
+	ErrInvalidToolApprovalSignature = errors.New("invalid tool approval signature")
+	ErrToolCallNotFoundForApproval  = errors.New("tool call not found for approval")
+	ErrToolCallRepair               = errors.New("tool call repair error")
+	ErrUnsupportedModelVersion      = errors.New("unsupported model version")
+	ErrUIMessageStream              = errors.New("ui message stream error")
 )
 
 type InvalidDataContentError struct {
@@ -248,6 +249,27 @@ func IsInvalidStreamPartError(err error) bool {
 type InvalidToolApprovalError struct {
 	SDKError
 	ApprovalID string
+}
+
+type InvalidToolApprovalSignatureError struct {
+	SDKError
+	ApprovalID string
+	ToolCallID string
+}
+
+func NewInvalidToolApprovalSignatureError(approvalID, toolCallID, reason string) *InvalidToolApprovalSignatureError {
+	return &InvalidToolApprovalSignatureError{
+		SDKError: SDKError{Kind: ErrInvalidToolApprovalSignature, Message: fmt.Sprintf(
+			"Tool approval signature verification failed for approval %q (tool call %q): %s", approvalID, toolCallID, reason,
+		)},
+		ApprovalID: approvalID,
+		ToolCallID: toolCallID,
+	}
+}
+
+func IsInvalidToolApprovalSignatureError(err error) bool {
+	var target *InvalidToolApprovalSignatureError
+	return errors.As(err, &target) || errors.Is(err, ErrInvalidToolApprovalSignature)
 }
 
 func NewInvalidToolApprovalError(approvalID string) *InvalidToolApprovalError {

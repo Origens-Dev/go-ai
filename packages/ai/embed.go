@@ -43,7 +43,7 @@ func Embed(ctx context.Context, opts EmbedOptions) (embedResult *EmbedResult, er
 		ProviderMetadata: result.ProviderMetadata,
 		Response:         response,
 	}
-	emitFinish(ctx, opts.Telemetry, opts.TelemetryOptions, opts.OnFinish, EventEmbedFinish, OperationEmbed, embedResult, map[string]any{
+	emitFinish(ctx, opts.Telemetry, opts.TelemetryOptions, endCallback(opts.OnEnd, opts.OnFinish), EventEmbedFinish, OperationEmbed, embedResult, map[string]any{
 		"usage":            embedResult.Usage,
 		"output.embedding": embedResult.Embedding,
 	})
@@ -63,7 +63,7 @@ func EmbedMany(ctx context.Context, opts EmbedManyOptions) (embedManyResult *Emb
 	values := append([]string{}, opts.Values...)
 	if len(values) == 0 {
 		embedManyResult = &EmbedManyResult{Values: values}
-		emitFinish(ctx, opts.Telemetry, opts.TelemetryOptions, opts.OnFinish, EventEmbedManyFinish, OperationEmbedMany, embedManyResult, map[string]any{"value_count": 0})
+		emitFinish(ctx, opts.Telemetry, opts.TelemetryOptions, endCallback(opts.OnEnd, opts.OnFinish), EventEmbedManyFinish, OperationEmbedMany, embedManyResult, map[string]any{"value_count": 0})
 		return embedManyResult, nil
 	}
 
@@ -152,7 +152,7 @@ func EmbedMany(ctx context.Context, opts EmbedManyOptions) (embedManyResult *Emb
 		ProviderMetadata: metadata,
 		Responses:        responses,
 	}
-	emitFinish(ctx, opts.Telemetry, opts.TelemetryOptions, opts.OnFinish, EventEmbedManyFinish, OperationEmbedMany, embedManyResult, map[string]any{
+	emitFinish(ctx, opts.Telemetry, opts.TelemetryOptions, endCallback(opts.OnEnd, opts.OnFinish), EventEmbedManyFinish, OperationEmbedMany, embedManyResult, map[string]any{
 		"usage":             embedManyResult.Usage,
 		"value_count":       len(embedManyResult.Values),
 		"output.embeddings": embedManyResult.Embeddings,

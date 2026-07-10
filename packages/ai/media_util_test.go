@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -292,6 +293,46 @@ func TestDownloadURLRejectsUnsafeURL(t *testing.T) {
 	}
 }
 
+func TestValidateDownloadURLRejectsSSRFBypasses(t *testing.T) {
+	blocked := []string{
+		"http://localhost./file",
+		"http://myhost.local./file",
+		"http://2130706433/file",
+		"http://0x7f000001/file",
+		"http://0177.0.0.1/file",
+		"http://[::127.0.0.1]/file",
+		"http://[::ffff:0:127.0.0.1]/file",
+		"http://[64:ff9b::169.254.169.254]/file",
+		"http://[64:ff9b:1::169.254.169.254]/file",
+		"http://100.64.0.1/file",
+		"http://192.0.0.1/file",
+		"http://198.18.0.1/file",
+		"http://240.0.0.1/file",
+		"http://255.255.255.255/file",
+		"http://[fec0::1]/file",
+		"http://[ff02::1]/file",
+	}
+	for _, rawURL := range blocked {
+		t.Run(rawURL, func(t *testing.T) {
+			if err := ValidateDownloadURL(rawURL); !IsDownloadError(err) {
+				t.Fatalf("expected %s to be blocked, got %v", rawURL, err)
+			}
+		})
+	}
+	allowed := []string{
+		"https://example.com./image.png",
+		"http://100.63.0.1/file",
+		"http://100.128.0.1/file",
+		"http://[64:ff9b::203.0.113.1]/file",
+		"http://[2001:db8::1]/file",
+	}
+	for _, rawURL := range allowed {
+		if err := ValidateDownloadURL(rawURL); err != nil {
+			t.Fatalf("expected %s to be allowed, got %v", rawURL, err)
+		}
+	}
+}
+
 func TestDownloadURLEnforcesSizeLimit(t *testing.T) {
 	_, _, err := DownloadURL(context.Background(), "https://example.com/large", &DownloadURLOptions{
 		MaxBytes: 3,
@@ -309,6 +350,42 @@ func TestDownloadURLEnforcesSizeLimit(t *testing.T) {
 		t.Fatalf("expected size-limited download error, got %v", err)
 	}
 }
+
+func TestDownloadURLClosesRejectedResponseBodies(t *testing.T) {
+	body := &trackingReadCloser{Reader: strings.NewReader("too large")}
+	_, _, err := DownloadURL(context.Background(), "https://example.com/large", &DownloadURLOptions{
+		MaxBytes: 3,
+		Client: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Length": []string{"9"}}, ContentLength: 9, Body: body, Request: req}, nil
+		})},
+	})
+	if !IsDownloadError(err) || !body.closed {
+		t.Fatalf("err=%v closed=%v", err, body.closed)
+	}
+}
+
+func TestDownloadURLRejectsUnsafeRedirectBeforeRequest(t *testing.T) {
+	requests := 0
+	_, _, err := DownloadURL(context.Background(), "https://example.com/start", &DownloadURLOptions{
+		Client: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			requests++
+			return &http.Response{
+				StatusCode: http.StatusFound, Header: http.Header{"Location": []string{"http://127.0.0.1/secret"}},
+				Body: io.NopCloser(strings.NewReader("redirect")), Request: req,
+			}, nil
+		})},
+	})
+	if !IsDownloadError(err) || requests != 1 {
+		t.Fatalf("err=%v requests=%d", err, requests)
+	}
+}
+
+type trackingReadCloser struct {
+	io.Reader
+	closed bool
+}
+
+func (r *trackingReadCloser) Close() error { r.closed = true; return nil }
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
 

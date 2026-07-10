@@ -120,6 +120,28 @@ func (p ToolCallPart) InputJSON() string {
 	return string(b)
 }
 
+type ToolApprovalRequestPart struct {
+	ApprovalID  string
+	ToolCallID  string
+	Signature   string
+	IsAutomatic bool
+}
+
+func (ToolApprovalRequestPart) part()            {}
+func (ToolApprovalRequestPart) PartType() string { return "tool-approval-request" }
+
+type ToolApprovalResponsePart struct {
+	ApprovalID       string
+	Approved         bool
+	Reason           string
+	ProviderExecuted bool
+	ProviderMetadata ProviderMetadata
+	ProviderOptions  ProviderOptions
+}
+
+func (ToolApprovalResponsePart) part()            {}
+func (ToolApprovalResponsePart) PartType() string { return "tool-approval-response" }
+
 type ToolResultOutput struct {
 	Type            string
 	Value           any

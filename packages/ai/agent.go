@@ -13,46 +13,52 @@ type Agent interface {
 }
 
 type AgentCallOptions struct {
-	Instructions          string
-	Prompt                string
-	Messages              []Message
-	Options               any
-	AllowSystemInMessages bool
-	Tools                 map[string]Tool
-	ActiveTools           []string
-	ToolChoice            ToolChoice
-	ToolExecution         ToolExecutionMode
-	ToolApproval          *ToolApprovalConfiguration
-	StopWhen              []StopCondition
-	MaxRetries            *int
-	Timeout               TimeoutConfig
-	Headers               map[string]string
-	Include               IncludeConfig
-	ProviderOptions       ProviderOptions
-	MaxOutputTokens       *int
-	Temperature           *float64
-	TopP                  *float64
-	TopK                  *float64
-	PresencePenalty       *float64
-	FrequencyPenalty      *float64
-	StopSequences         []string
-	Seed                  *int
-	Reasoning             string
-	Download              DownloadFunction
-	Output                *OutputStrategy
-	ResponseFormat        *ResponseFormat
-	Sandbox               Sandbox
-	PrepareStep           func(PrepareStepOptions) (*PrepareStepResult, error)
-	RefineToolInput       ToolInputRefineFunc
-	Telemetry             Telemetry
-	OnStart               func(StartEvent)
-	OnToolExecutionStart  func(ToolExecutionStartEvent)
-	OnToolExecutionEnd    func(ToolExecutionEndEvent)
-	OnStepFinish          func(StepFinishEvent)
-	OnEnd                 func(FinishEvent)
-	OnFinish              func(FinishEvent)
-	OnAbort               func(AbortEvent)
-	OnError               func(ErrorEvent)
+	Instructions             string
+	Prompt                   string
+	Messages                 []Message
+	Options                  any
+	AllowSystemInMessages    bool
+	Tools                    map[string]Tool
+	ActiveTools              []string
+	ToolOrder                []string
+	ToolChoice               ToolChoice
+	ToolExecution            ToolExecutionMode
+	ToolApproval             *ToolApprovalConfiguration
+	ToolApprovalSecret       []byte
+	StopWhen                 []StopCondition
+	MaxRetries               *int
+	Timeout                  TimeoutConfig
+	Headers                  map[string]string
+	Include                  IncludeConfig
+	ProviderOptions          ProviderOptions
+	MaxOutputTokens          *int
+	Temperature              *float64
+	TopP                     *float64
+	TopK                     *float64
+	PresencePenalty          *float64
+	FrequencyPenalty         *float64
+	StopSequences            []string
+	Seed                     *int
+	Reasoning                string
+	Download                 DownloadFunction
+	Output                   *OutputStrategy
+	ResponseFormat           *ResponseFormat
+	Sandbox                  Sandbox
+	PrepareStep              func(PrepareStepOptions) (*PrepareStepResult, error)
+	RefineToolInput          ToolInputRefineFunc
+	Telemetry                Telemetry
+	OnStart                  func(StartEvent)
+	OnStepStart              func(StepStartEvent)
+	OnLanguageModelCallStart func(LanguageModelCallStartEvent)
+	OnLanguageModelCallEnd   func(LanguageModelCallEndEvent)
+	OnToolExecutionStart     func(ToolExecutionStartEvent)
+	OnToolExecutionEnd       func(ToolExecutionEndEvent)
+	OnStepEnd                func(StepFinishEvent)
+	OnStepFinish             func(StepFinishEvent)
+	OnEnd                    func(FinishEvent)
+	OnFinish                 func(FinishEvent)
+	OnAbort                  func(AbortEvent)
+	OnError                  func(ErrorEvent)
 }
 
 type AgentStreamOptions struct {
@@ -63,46 +69,52 @@ type AgentStreamOptions struct {
 }
 
 type ToolLoopAgentSettings struct {
-	ID                   string
-	Instructions         string
-	Model                LanguageModel
-	Tools                map[string]Tool
-	ActiveTools          []string
-	ToolChoice           ToolChoice
-	ToolExecution        ToolExecutionMode
-	ToolApproval         *ToolApprovalConfiguration
-	StopWhen             []StopCondition
-	MaxRetries           *int
-	Timeout              TimeoutConfig
-	Headers              map[string]string
-	Include              IncludeConfig
-	ProviderOptions      ProviderOptions
-	MaxOutputTokens      *int
-	Temperature          *float64
-	TopP                 *float64
-	TopK                 *float64
-	PresencePenalty      *float64
-	FrequencyPenalty     *float64
-	StopSequences        []string
-	Seed                 *int
-	Reasoning            string
-	Download             DownloadFunction
-	Output               *OutputStrategy
-	ResponseFormat       *ResponseFormat
-	Sandbox              Sandbox
-	PrepareStep          func(PrepareStepOptions) (*PrepareStepResult, error)
-	RefineToolInput      ToolInputRefineFunc
-	Telemetry            Telemetry
-	Transforms           []StreamTransform
-	OnStart              func(StartEvent)
-	OnToolExecutionStart func(ToolExecutionStartEvent)
-	OnToolExecutionEnd   func(ToolExecutionEndEvent)
-	OnStepFinish         func(StepFinishEvent)
-	OnEnd                func(FinishEvent)
-	OnFinish             func(FinishEvent)
-	OnAbort              func(AbortEvent)
-	OnError              func(ErrorEvent)
-	PrepareCall          func(AgentPrepareCallOptions) (*AgentPreparedCall, error)
+	ID                       string
+	Instructions             string
+	Model                    LanguageModel
+	Tools                    map[string]Tool
+	ActiveTools              []string
+	ToolOrder                []string
+	ToolChoice               ToolChoice
+	ToolExecution            ToolExecutionMode
+	ToolApproval             *ToolApprovalConfiguration
+	ToolApprovalSecret       []byte
+	StopWhen                 []StopCondition
+	MaxRetries               *int
+	Timeout                  TimeoutConfig
+	Headers                  map[string]string
+	Include                  IncludeConfig
+	ProviderOptions          ProviderOptions
+	MaxOutputTokens          *int
+	Temperature              *float64
+	TopP                     *float64
+	TopK                     *float64
+	PresencePenalty          *float64
+	FrequencyPenalty         *float64
+	StopSequences            []string
+	Seed                     *int
+	Reasoning                string
+	Download                 DownloadFunction
+	Output                   *OutputStrategy
+	ResponseFormat           *ResponseFormat
+	Sandbox                  Sandbox
+	PrepareStep              func(PrepareStepOptions) (*PrepareStepResult, error)
+	RefineToolInput          ToolInputRefineFunc
+	Telemetry                Telemetry
+	Transforms               []StreamTransform
+	OnStart                  func(StartEvent)
+	OnStepStart              func(StepStartEvent)
+	OnLanguageModelCallStart func(LanguageModelCallStartEvent)
+	OnLanguageModelCallEnd   func(LanguageModelCallEndEvent)
+	OnToolExecutionStart     func(ToolExecutionStartEvent)
+	OnToolExecutionEnd       func(ToolExecutionEndEvent)
+	OnStepEnd                func(StepFinishEvent)
+	OnStepFinish             func(StepFinishEvent)
+	OnEnd                    func(FinishEvent)
+	OnFinish                 func(FinishEvent)
+	OnAbort                  func(AbortEvent)
+	OnError                  func(ErrorEvent)
+	PrepareCall              func(AgentPrepareCallOptions) (*AgentPreparedCall, error)
 }
 
 type AgentPrepareCallOptions struct {
@@ -119,9 +131,11 @@ type AgentPreparedCall struct {
 	Model                 LanguageModel
 	Tools                 map[string]Tool
 	ActiveTools           []string
+	ToolOrder             []string
 	ToolChoice            *ToolChoice
 	ToolExecution         *ToolExecutionMode
 	ToolApproval          *ToolApprovalConfiguration
+	ToolApprovalSecret    []byte
 	StopWhen              []StopCondition
 	MaxRetries            *int
 	Timeout               *TimeoutConfig
@@ -179,46 +193,51 @@ func (a *ToolLoopAgent) Generate(ctx context.Context, opts AgentCallOptions) (*G
 		return nil, err
 	}
 	return GenerateText(ctx, GenerateTextOptions{
-		Model:                 call.Model,
-		Instructions:          call.Instructions,
-		System:                call.System,
-		Prompt:                call.Prompt,
-		Messages:              call.Messages,
-		AllowSystemInMessages: call.AllowSystemInMessages,
-		Tools:                 call.Tools,
-		ActiveTools:           opts.ActiveTools,
-		ToolChoice:            call.ToolChoice,
-		ToolExecution:         call.ToolExecution,
-		ToolApproval:          call.ToolApproval,
-		StopWhen:              call.StopWhen,
-		MaxRetries:            call.MaxRetries,
-		Timeout:               call.Timeout,
-		Headers:               call.Headers,
-		Include:               call.Include,
-		ProviderOptions:       call.ProviderOptions,
-		MaxOutputTokens:       call.MaxOutputTokens,
-		Temperature:           call.Temperature,
-		TopP:                  call.TopP,
-		TopK:                  call.TopK,
-		PresencePenalty:       call.PresencePenalty,
-		FrequencyPenalty:      call.FrequencyPenalty,
-		StopSequences:         call.StopSequences,
-		Seed:                  call.Seed,
-		Reasoning:             call.Reasoning,
-		Download:              call.Download,
-		Output:                call.Output,
-		ResponseFormat:        call.ResponseFormat,
-		Sandbox:               call.Sandbox,
-		PrepareStep:           call.PrepareStep,
-		RefineToolInput:       call.RefineToolInput,
-		Telemetry:             call.Telemetry,
-		OnStart:               mergeStartCallbacks(a.settings.OnStart, opts.OnStart),
-		OnToolExecutionStart:  mergeToolExecutionStartCallbacks(a.settings.OnToolExecutionStart, opts.OnToolExecutionStart),
-		OnToolExecutionEnd:    mergeToolExecutionEndCallbacks(a.settings.OnToolExecutionEnd, opts.OnToolExecutionEnd),
-		OnStepFinish:          mergeStepFinishCallbacks(a.settings.OnStepFinish, opts.OnStepFinish),
-		OnEnd:                 mergeFinishCallbacks(firstFinishCallback(a.settings.OnEnd, a.settings.OnFinish), firstFinishCallback(opts.OnEnd, opts.OnFinish)),
-		OnFinish:              nil,
-		OnError:               mergeErrorCallbacks(a.settings.OnError, opts.OnError),
+		Model:                    call.Model,
+		Instructions:             call.Instructions,
+		System:                   call.System,
+		Prompt:                   call.Prompt,
+		Messages:                 call.Messages,
+		AllowSystemInMessages:    call.AllowSystemInMessages,
+		Tools:                    call.Tools,
+		ActiveTools:              opts.ActiveTools,
+		ToolOrder:                append([]string(nil), call.ToolOrder...),
+		ToolChoice:               call.ToolChoice,
+		ToolExecution:            call.ToolExecution,
+		ToolApproval:             call.ToolApproval,
+		ToolApprovalSecret:       append([]byte(nil), call.ToolApprovalSecret...),
+		StopWhen:                 call.StopWhen,
+		MaxRetries:               call.MaxRetries,
+		Timeout:                  call.Timeout,
+		Headers:                  call.Headers,
+		Include:                  call.Include,
+		ProviderOptions:          call.ProviderOptions,
+		MaxOutputTokens:          call.MaxOutputTokens,
+		Temperature:              call.Temperature,
+		TopP:                     call.TopP,
+		TopK:                     call.TopK,
+		PresencePenalty:          call.PresencePenalty,
+		FrequencyPenalty:         call.FrequencyPenalty,
+		StopSequences:            call.StopSequences,
+		Seed:                     call.Seed,
+		Reasoning:                call.Reasoning,
+		Download:                 call.Download,
+		Output:                   call.Output,
+		ResponseFormat:           call.ResponseFormat,
+		Sandbox:                  call.Sandbox,
+		PrepareStep:              call.PrepareStep,
+		RefineToolInput:          call.RefineToolInput,
+		Telemetry:                call.Telemetry,
+		OnStart:                  mergeStartCallbacks(a.settings.OnStart, opts.OnStart),
+		OnStepStart:              mergeStepStartCallbacks(a.settings.OnStepStart, opts.OnStepStart),
+		OnLanguageModelCallStart: mergeLanguageModelCallStartCallbacks(a.settings.OnLanguageModelCallStart, opts.OnLanguageModelCallStart),
+		OnLanguageModelCallEnd:   mergeLanguageModelCallEndCallbacks(a.settings.OnLanguageModelCallEnd, opts.OnLanguageModelCallEnd),
+		OnToolExecutionStart:     mergeToolExecutionStartCallbacks(a.settings.OnToolExecutionStart, opts.OnToolExecutionStart),
+		OnToolExecutionEnd:       mergeToolExecutionEndCallbacks(a.settings.OnToolExecutionEnd, opts.OnToolExecutionEnd),
+		OnStepEnd:                mergeStepFinishCallbacks(firstStepEndCallback(a.settings.OnStepEnd, a.settings.OnStepFinish), firstStepEndCallback(opts.OnStepEnd, opts.OnStepFinish)),
+		OnEnd:                    mergeFinishCallbacks(firstFinishCallback(a.settings.OnEnd, a.settings.OnFinish), firstFinishCallback(opts.OnEnd, opts.OnFinish)),
+		OnFinish:                 nil,
+		OnError:                  mergeErrorCallbacks(a.settings.OnError, opts.OnError),
 	})
 }
 
@@ -229,47 +248,52 @@ func (a *ToolLoopAgent) Stream(ctx context.Context, opts AgentStreamOptions) (*S
 	}
 	return StreamText(ctx, StreamTextOptions{
 		GenerateTextOptions: GenerateTextOptions{
-			Model:                 call.Model,
-			Instructions:          call.Instructions,
-			System:                call.System,
-			Prompt:                call.Prompt,
-			Messages:              call.Messages,
-			AllowSystemInMessages: call.AllowSystemInMessages,
-			Tools:                 call.Tools,
-			ActiveTools:           opts.ActiveTools,
-			ToolChoice:            call.ToolChoice,
-			ToolExecution:         call.ToolExecution,
-			ToolApproval:          call.ToolApproval,
-			StopWhen:              call.StopWhen,
-			MaxRetries:            call.MaxRetries,
-			Timeout:               call.Timeout,
-			Headers:               call.Headers,
-			Include:               call.Include,
-			ProviderOptions:       call.ProviderOptions,
-			MaxOutputTokens:       call.MaxOutputTokens,
-			Temperature:           call.Temperature,
-			TopP:                  call.TopP,
-			TopK:                  call.TopK,
-			PresencePenalty:       call.PresencePenalty,
-			FrequencyPenalty:      call.FrequencyPenalty,
-			StopSequences:         call.StopSequences,
-			Seed:                  call.Seed,
-			Reasoning:             call.Reasoning,
-			Download:              call.Download,
-			Output:                call.Output,
-			ResponseFormat:        call.ResponseFormat,
-			Sandbox:               call.Sandbox,
-			PrepareStep:           call.PrepareStep,
-			RefineToolInput:       call.RefineToolInput,
-			Telemetry:             call.Telemetry,
-			OnStart:               mergeStartCallbacks(a.settings.OnStart, opts.OnStart),
-			OnToolExecutionStart:  mergeToolExecutionStartCallbacks(a.settings.OnToolExecutionStart, opts.OnToolExecutionStart),
-			OnToolExecutionEnd:    mergeToolExecutionEndCallbacks(a.settings.OnToolExecutionEnd, opts.OnToolExecutionEnd),
-			OnStepFinish:          mergeStepFinishCallbacks(a.settings.OnStepFinish, opts.OnStepFinish),
-			OnEnd:                 mergeFinishCallbacks(firstFinishCallback(a.settings.OnEnd, a.settings.OnFinish), firstFinishCallback(opts.OnEnd, opts.OnFinish)),
-			OnFinish:              nil,
-			OnAbort:               mergeAbortCallbacks(a.settings.OnAbort, opts.OnAbort),
-			OnError:               mergeErrorCallbacks(a.settings.OnError, opts.OnError),
+			Model:                    call.Model,
+			Instructions:             call.Instructions,
+			System:                   call.System,
+			Prompt:                   call.Prompt,
+			Messages:                 call.Messages,
+			AllowSystemInMessages:    call.AllowSystemInMessages,
+			Tools:                    call.Tools,
+			ActiveTools:              opts.ActiveTools,
+			ToolOrder:                append([]string(nil), call.ToolOrder...),
+			ToolChoice:               call.ToolChoice,
+			ToolExecution:            call.ToolExecution,
+			ToolApproval:             call.ToolApproval,
+			ToolApprovalSecret:       append([]byte(nil), call.ToolApprovalSecret...),
+			StopWhen:                 call.StopWhen,
+			MaxRetries:               call.MaxRetries,
+			Timeout:                  call.Timeout,
+			Headers:                  call.Headers,
+			Include:                  call.Include,
+			ProviderOptions:          call.ProviderOptions,
+			MaxOutputTokens:          call.MaxOutputTokens,
+			Temperature:              call.Temperature,
+			TopP:                     call.TopP,
+			TopK:                     call.TopK,
+			PresencePenalty:          call.PresencePenalty,
+			FrequencyPenalty:         call.FrequencyPenalty,
+			StopSequences:            call.StopSequences,
+			Seed:                     call.Seed,
+			Reasoning:                call.Reasoning,
+			Download:                 call.Download,
+			Output:                   call.Output,
+			ResponseFormat:           call.ResponseFormat,
+			Sandbox:                  call.Sandbox,
+			PrepareStep:              call.PrepareStep,
+			RefineToolInput:          call.RefineToolInput,
+			Telemetry:                call.Telemetry,
+			OnStart:                  mergeStartCallbacks(a.settings.OnStart, opts.OnStart),
+			OnStepStart:              mergeStepStartCallbacks(a.settings.OnStepStart, opts.OnStepStart),
+			OnLanguageModelCallStart: mergeLanguageModelCallStartCallbacks(a.settings.OnLanguageModelCallStart, opts.OnLanguageModelCallStart),
+			OnLanguageModelCallEnd:   mergeLanguageModelCallEndCallbacks(a.settings.OnLanguageModelCallEnd, opts.OnLanguageModelCallEnd),
+			OnToolExecutionStart:     mergeToolExecutionStartCallbacks(a.settings.OnToolExecutionStart, opts.OnToolExecutionStart),
+			OnToolExecutionEnd:       mergeToolExecutionEndCallbacks(a.settings.OnToolExecutionEnd, opts.OnToolExecutionEnd),
+			OnStepEnd:                mergeStepFinishCallbacks(firstStepEndCallback(a.settings.OnStepEnd, a.settings.OnStepFinish), firstStepEndCallback(opts.OnStepEnd, opts.OnStepFinish)),
+			OnEnd:                    mergeFinishCallbacks(firstFinishCallback(a.settings.OnEnd, a.settings.OnFinish), firstFinishCallback(opts.OnEnd, opts.OnFinish)),
+			OnFinish:                 nil,
+			OnAbort:                  mergeAbortCallbacks(a.settings.OnAbort, opts.OnAbort),
+			OnError:                  mergeErrorCallbacks(a.settings.OnError, opts.OnError),
 		},
 		IncludeRawChunks: opts.IncludeRawChunks,
 		OnChunk:          opts.OnChunk,
@@ -285,9 +309,11 @@ type preparedAgentCall struct {
 	AllowSystemInMessages bool
 	Model                 LanguageModel
 	Tools                 map[string]Tool
+	ToolOrder             []string
 	ToolChoice            ToolChoice
 	ToolExecution         ToolExecutionMode
 	ToolApproval          *ToolApprovalConfiguration
+	ToolApprovalSecret    []byte
 	StopWhen              []StopCondition
 	MaxRetries            *int
 	Timeout               TimeoutConfig
@@ -325,9 +351,11 @@ func (a *ToolLoopAgent) prepareCall(opts AgentCallOptions) (preparedAgentCall, e
 		AllowSystemInMessages: opts.AllowSystemInMessages,
 		Model:                 firstLanguageModel(optsModel(opts), settings.Model),
 		Tools:                 firstTools(opts.Tools, settings.Tools),
+		ToolOrder:             firstStrings(opts.ToolOrder, settings.ToolOrder),
 		ToolChoice:            firstToolChoice(opts.ToolChoice, settings.ToolChoice),
 		ToolExecution:         firstToolExecution(opts.ToolExecution, settings.ToolExecution),
 		ToolApproval:          firstToolApproval(opts.ToolApproval, settings.ToolApproval),
+		ToolApprovalSecret:    firstBytes(opts.ToolApprovalSecret, settings.ToolApprovalSecret),
 		StopWhen:              firstStopConditions(opts.StopWhen, settings.StopWhen, []StopCondition{StepCount(20)}),
 		MaxRetries:            firstIntPtr(opts.MaxRetries, settings.MaxRetries),
 		Timeout:               firstTimeout(opts.Timeout, settings.Timeout),
@@ -401,6 +429,9 @@ func applyPreparedAgentCall(call *preparedAgentCall, prepared *AgentPreparedCall
 	if prepared.Tools != nil {
 		call.Tools = prepared.Tools
 	}
+	if prepared.ToolOrder != nil {
+		call.ToolOrder = append([]string(nil), prepared.ToolOrder...)
+	}
 	if prepared.ToolChoice != nil {
 		call.ToolChoice = *prepared.ToolChoice
 	}
@@ -409,6 +440,9 @@ func applyPreparedAgentCall(call *preparedAgentCall, prepared *AgentPreparedCall
 	}
 	if prepared.ToolApproval != nil {
 		call.ToolApproval = prepared.ToolApproval
+	}
+	if prepared.ToolApprovalSecret != nil {
+		call.ToolApprovalSecret = append([]byte(nil), prepared.ToolApprovalSecret...)
 	}
 	if prepared.StopWhen != nil {
 		call.StopWhen = prepared.StopWhen
@@ -517,6 +551,15 @@ func firstToolApproval(values ...*ToolApprovalConfiguration) *ToolApprovalConfig
 	for _, value := range values {
 		if value != nil {
 			return value
+		}
+	}
+	return nil
+}
+
+func firstBytes(values ...[]byte) []byte {
+	for _, value := range values {
+		if value != nil {
+			return append([]byte(nil), value...)
 		}
 	}
 	return nil
@@ -681,6 +724,36 @@ func mergeStartCallbacks(callbacks ...func(StartEvent)) func(StartEvent) {
 	}
 }
 
+func mergeStepStartCallbacks(callbacks ...func(StepStartEvent)) func(StepStartEvent) {
+	return func(event StepStartEvent) {
+		for _, callback := range callbacks {
+			if callback != nil {
+				callback(event)
+			}
+		}
+	}
+}
+
+func mergeLanguageModelCallStartCallbacks(callbacks ...func(LanguageModelCallStartEvent)) func(LanguageModelCallStartEvent) {
+	return func(event LanguageModelCallStartEvent) {
+		for _, callback := range callbacks {
+			if callback != nil {
+				callback(event)
+			}
+		}
+	}
+}
+
+func mergeLanguageModelCallEndCallbacks(callbacks ...func(LanguageModelCallEndEvent)) func(LanguageModelCallEndEvent) {
+	return func(event LanguageModelCallEndEvent) {
+		for _, callback := range callbacks {
+			if callback != nil {
+				callback(event)
+			}
+		}
+	}
+}
+
 func mergeToolExecutionStartCallbacks(callbacks ...func(ToolExecutionStartEvent)) func(ToolExecutionStartEvent) {
 	return func(event ToolExecutionStartEvent) {
 		for _, callback := range callbacks {
@@ -709,6 +782,15 @@ func mergeStepFinishCallbacks(callbacks ...func(StepFinishEvent)) func(StepFinis
 			}
 		}
 	}
+}
+
+func firstStepEndCallback(callbacks ...func(StepFinishEvent)) func(StepFinishEvent) {
+	for _, callback := range callbacks {
+		if callback != nil {
+			return callback
+		}
+	}
+	return nil
 }
 
 func mergeFinishCallbacks(callbacks ...func(FinishEvent)) func(FinishEvent) {

@@ -7,49 +7,55 @@ import (
 )
 
 type GenerateTextOptions struct {
-	Model                 LanguageModel
-	Instructions          string
-	System                string
-	Prompt                string
-	Messages              []Message
-	AllowSystemInMessages bool
-	Tools                 map[string]Tool
-	ActiveTools           []string
-	ToolChoice            ToolChoice
-	ToolExecution         ToolExecutionMode
-	ToolApproval          *ToolApprovalConfiguration
-	StopWhen              []StopCondition
-	MaxRetries            *int
-	Timeout               TimeoutConfig
-	Headers               map[string]string
-	Include               IncludeConfig
-	ProviderOptions       ProviderOptions
-	MaxOutputTokens       *int
-	Temperature           *float64
-	TopP                  *float64
-	TopK                  *float64
-	PresencePenalty       *float64
-	FrequencyPenalty      *float64
-	StopSequences         []string
-	Seed                  *int
-	Reasoning             string
-	Download              DownloadFunction
-	Output                *OutputStrategy
-	ResponseFormat        *ResponseFormat
-	Sandbox               Sandbox
-	PrepareStep           func(PrepareStepOptions) (*PrepareStepResult, error)
-	RepairToolCall        ToolCallRepairFunc
-	RefineToolInput       ToolInputRefineFunc
-	Telemetry             Telemetry
-	TelemetryOptions      TelemetryOptions
-	OnStart               func(StartEvent)
-	OnToolExecutionStart  func(ToolExecutionStartEvent)
-	OnToolExecutionEnd    func(ToolExecutionEndEvent)
-	OnStepFinish          func(StepFinishEvent)
-	OnEnd                 func(FinishEvent)
-	OnFinish              func(FinishEvent)
-	OnAbort               func(AbortEvent)
-	OnError               func(ErrorEvent)
+	Model                    LanguageModel
+	Instructions             string
+	System                   string
+	Prompt                   string
+	Messages                 []Message
+	AllowSystemInMessages    bool
+	Tools                    map[string]Tool
+	ActiveTools              []string
+	ToolOrder                []string
+	ToolChoice               ToolChoice
+	ToolExecution            ToolExecutionMode
+	ToolApproval             *ToolApprovalConfiguration
+	ToolApprovalSecret       []byte
+	StopWhen                 []StopCondition
+	MaxRetries               *int
+	Timeout                  TimeoutConfig
+	Headers                  map[string]string
+	Include                  IncludeConfig
+	ProviderOptions          ProviderOptions
+	MaxOutputTokens          *int
+	Temperature              *float64
+	TopP                     *float64
+	TopK                     *float64
+	PresencePenalty          *float64
+	FrequencyPenalty         *float64
+	StopSequences            []string
+	Seed                     *int
+	Reasoning                string
+	Download                 DownloadFunction
+	Output                   *OutputStrategy
+	ResponseFormat           *ResponseFormat
+	Sandbox                  Sandbox
+	PrepareStep              func(PrepareStepOptions) (*PrepareStepResult, error)
+	RepairToolCall           ToolCallRepairFunc
+	RefineToolInput          ToolInputRefineFunc
+	Telemetry                Telemetry
+	TelemetryOptions         TelemetryOptions
+	OnStart                  func(StartEvent)
+	OnStepStart              func(StepStartEvent)
+	OnLanguageModelCallStart func(LanguageModelCallStartEvent)
+	OnLanguageModelCallEnd   func(LanguageModelCallEndEvent)
+	OnToolExecutionStart     func(ToolExecutionStartEvent)
+	OnToolExecutionEnd       func(ToolExecutionEndEvent)
+	OnStepEnd                func(StepFinishEvent)
+	OnStepFinish             func(StepFinishEvent)
+	OnEnd                    func(FinishEvent)
+	OnFinish                 func(FinishEvent)
+	OnAbort                  func(AbortEvent)
+	OnError                  func(ErrorEvent)
 }
 
 type StreamTextOptions struct {
@@ -141,6 +147,7 @@ type PrepareStepOptions struct {
 	StepNumber   int
 	Messages     []Message
 	ToolsContext map[string]any
+	ToolOrder    []string
 	Sandbox      Sandbox
 }
 
@@ -150,6 +157,7 @@ type PrepareStepResult struct {
 	System          string
 	Messages        []Message
 	Tools           map[string]Tool
+	ToolOrder       []string
 	ToolChoice      ToolChoice
 	ProviderOptions ProviderOptions
 	ToolsContext    map[string]any
@@ -234,6 +242,7 @@ type GenerateObjectOptions struct {
 	Telemetry             Telemetry
 	TelemetryOptions      TelemetryOptions
 	OnStart               func(StartEvent)
+	OnEnd                 func(FinishEvent)
 	OnFinish              func(FinishEvent)
 	OnError               func(ErrorEvent)
 }
@@ -303,6 +312,7 @@ type EmbedOptions struct {
 	Telemetry        Telemetry
 	TelemetryOptions TelemetryOptions
 	OnStart          func(StartEvent)
+	OnEnd            func(FinishEvent)
 	OnFinish         func(FinishEvent)
 	OnError          func(ErrorEvent)
 }
@@ -317,6 +327,7 @@ type EmbedManyOptions struct {
 	Telemetry        Telemetry
 	TelemetryOptions TelemetryOptions
 	OnStart          func(StartEvent)
+	OnEnd            func(FinishEvent)
 	OnFinish         func(FinishEvent)
 	OnError          func(ErrorEvent)
 }

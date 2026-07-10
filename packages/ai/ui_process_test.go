@@ -314,6 +314,28 @@ func TestHandleUIMessageStreamFinishInjectsIDAndCallsCallbacks(t *testing.T) {
 	}
 }
 
+func TestHandleUIMessageStreamStableEndCallbackAliases(t *testing.T) {
+	input := make(chan UIMessageChunk, 3)
+	input <- UIMessageChunk{Type: UIMessageChunkTypeStart}
+	input <- UIMessageChunk{Type: UIMessageChunkTypeFinishStep}
+	input <- FinishUIMessageChunk(FinishStop)
+	close(input)
+	stepEnd := 0
+	end := 0
+	out := HandleUIMessageStreamFinish(input, HandleUIMessageStreamFinishOptions{
+		MessageID:    "response-id",
+		OnStepEnd:    func(UIMessageStreamStepFinishEvent) error { stepEnd++; return nil },
+		OnStepFinish: func(UIMessageStreamStepFinishEvent) error { t.Fatal("OnStepFinish alias should not run"); return nil },
+		OnEnd:        func(UIMessageStreamFinishEvent) error { end++; return nil },
+		OnFinish:     func(UIMessageStreamFinishEvent) error { t.Fatal("OnFinish alias should not run"); return nil },
+	})
+	for range out {
+	}
+	if stepEnd != 1 || end != 1 {
+		t.Fatalf("stepEnd=%d end=%d", stepEnd, end)
+	}
+}
+
 func TestHandleUIMessageStreamFinishContinuationAndAbort(t *testing.T) {
 	input := make(chan UIMessageChunk, 3)
 	input <- UIMessageChunk{Type: UIMessageChunkTypeStart}
@@ -363,6 +385,7 @@ func TestLastAssistantMessageIsCompleteWithApprovalResponses(t *testing.T) {
 			{Type: "step-start"},
 			{Type: "tool-weather", ToolCallID: "call-1", State: "approval-responded", Approval: &struct {
 				ID          string `json:"id"`
+				Signature   string `json:"signature,omitempty"`
 				Approved    *bool  `json:"approved,omitempty"`
 				Reason      string `json:"reason,omitempty"`
 				IsAutomatic bool   `json:"isAutomatic,omitempty"`

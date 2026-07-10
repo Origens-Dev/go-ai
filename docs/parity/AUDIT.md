@@ -2,9 +2,9 @@
 
 This is the broad audit snapshot for the Go port. It is reference material, not the active backlog. Active work belongs in `PARITY.md`.
 
-Baseline: `ai@7.0.0-canary.152`, upstream commit `9f1e1ba4b93b514f6cca1c8452e6a1fb23e44907`.
+Baseline: `ai@7.0.20`, upstream commit `58d77caf6733f49431b0864bd71adbe143958aeb`.
 
-The local `/Users/dholbrook/src/ai` checkout was refreshed to `9f1e1ba4b93b514f6cca1c8452e6a1fb23e44907` before the current test parity pass.
+The local `/Users/dholbrook/src/ai` checkout was refreshed to `58d77caf6733f49431b0864bd71adbe143958aeb` before the current parity pass.
 
 ## Current Go Surface
 
@@ -13,6 +13,7 @@ The Go package currently contains:
 - Prompt/message normalization for system/user/assistant/tool messages.
 - Content parts for text, files, reasoning, reasoning files, tool calls, tool results, and sources.
 - `GenerateText` with multi-step tool loops, accumulated AI SDK 7 result fields, `FinalStep`, `ResponseMessages`, stop conditions, tool choice filtering, active-tool filtering, provider-executed tool result tracking, input validation/refinement, tool-call repair, approval denial/user-approval outputs, retries, request timeouts, provider options, include controls, usage aggregation, callbacks, response metadata, custom download hooks, sandbox propagation, performance fields, and text/json/object/array/choice output strategies.
+- Signed tool-approval requests and replay validation, deterministic tool ordering, canonical tool fingerprints/drift detection, redacted UI-stream error defaults, and expanded SSRF protections.
 - `StreamText` with provider stream consumption, accumulated AI SDK 7 result fields, step accumulation, stream transforms, smooth streaming, streamed partial output parsing, array element events, abort/raw-chunk events, streamed tool execution, streamed tool-call repair, and follow-up tool-loop steps.
 - Lifecycle callbacks and telemetry hooks for text, stream text, object generation, embeddings, media, uploads, and model calls.
 - `GenerateObject` / `StreamObject` with JSON response-format steering, object/array/enum/no-schema modes, array output wrapping/unwrapping, JSON instruction helper, repair hook, best-effort schema validation, typed no-object errors, repaired partial object streaming, and Go-native array element streaming.
@@ -43,8 +44,9 @@ The Go package currently contains:
 | `rerank` | done | Core rerank API exists; provider implementations are outside `packages/ai`. |
 | `generate-image` | done | Core image delegation API exists; provider implementations are outside `packages/ai`. |
 | `generate-speech` | done | Core speech delegation API exists; provider implementations are outside `packages/ai`. |
-| `transcribe` | done | Core transcription delegation API exists; provider implementations are outside `packages/ai`. |
-| `generate-video` | done | Core video delegation API exists; provider polling implementations are outside `packages/ai`. |
+| `transcribe` | partial | Core batch transcription exists; streaming transcription is queued as a separate optional provider interface. |
+| `generate-video` | partial | Core video delegation exists; AI SDK 7 batching, frame images, reference inputs, audio generation, and URL normalization remain queued. |
+| `realtime` | n/a-go | Browser sessions/transports are intentionally absent; a Go-native experimental provider/token subset may be evaluated separately. |
 | `upload-file` | done | Files API/provider contract and upload delegation exist. |
 | `upload-skill` | done | Skills API/provider contract and upload delegation exist. |
 | `text-stream` | partial | Go HTTP response helpers exist. Broader fixture coverage remains. |
@@ -63,7 +65,7 @@ The Go package currently contains:
 - Add named error types before features depend on them.
 - Keep the active backlog in `PARITY.md` focused on unfinished work only.
 
-## Canary.122-152 Delta Summary
+## AI SDK 7.0.20 Delta Summary
 
 - `generateText` / `streamText` changed result semantics: top-level content/files/sources/tool calls/tool results are accumulated across steps, `usage` is total usage, `totalUsage` is deprecated, and `finalStep` is the last-step shortcut.
 - `StepResult` gained request messages and performance metrics; request/response bodies are now controlled by stable include settings to reduce memory for large file/image payloads.
@@ -72,3 +74,7 @@ The Go package currently contains:
 - Tooling gained `toolMetadata`, flexible descriptions, optional context support, and the sandbox abstraction (`runCommand`, `readFile`, `writeFile`).
 - Telemetry moved toward safer defaults and renamed end-style callbacks; runtime and tools context are opt-in, and chunk telemetry is no longer tied to `onChunk`.
 - UI validation/runtime shapes now tolerate missing `input` on input-streaming/output-error tool parts, matching serialized persisted messages.
+- Approval requests can be signed and replayed approvals are signature-, schema-, and policy-validated before execution.
+- Tool definitions have deterministic provider ordering plus opt-in fingerprints for detecting server-controlled definition drift.
+- UI stream errors are client-safe by default and URL downloads cover the expanded upstream SSRF regression matrix.
+- Stable start/step/model-call/end callbacks coexist with finish-named aliases; empty model streams now fail instead of creating empty steps.

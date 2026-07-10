@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -328,11 +329,15 @@ func ValidateDownloadURL(rawURL string) error {
 	if hostname == "" {
 		return NewDownloadError(rawURL, 0, "", "URL must have a hostname", nil)
 	}
-	lowerHost := strings.ToLower(hostname)
+	lowerHost := strings.TrimRight(strings.ToLower(hostname), ".")
 	if lowerHost == "localhost" || strings.HasSuffix(lowerHost, ".local") || strings.HasSuffix(lowerHost, ".localhost") {
-		return NewDownloadError(rawURL, 0, "", fmt.Sprintf("URL with hostname %s is not allowed", hostname), nil)
+		return NewDownloadError(rawURL, 0, "", fmt.Sprintf("URL with hostname %s is not allowed", lowerHost), nil)
 	}
-	if ip := net.ParseIP(hostname); ip != nil && isPrivateDownloadIP(ip) {
+	ip := net.ParseIP(lowerHost)
+	if ip == nil {
+		ip = parseLegacyIPv4(lowerHost)
+	}
+	if ip != nil && isPrivateDownloadIP(ip) {
 		return NewDownloadError(rawURL, 0, "", fmt.Sprintf("URL with IP address %s is not allowed", hostname), nil)
 	}
 	return nil
@@ -376,7 +381,118 @@ func normalizeURLFileData(ctx context.Context, rawURL string, mediaType string, 
 }
 
 func isPrivateDownloadIP(ip net.IP) bool {
-	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified()
+	if ipv4 := ip.To4(); ipv4 != nil {
+		return isPrivateDownloadIPv4(ipv4)
+	}
+	if len(ip) != net.IPv6len {
+		return true
+	}
+	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() || ip.IsMulticast() {
+		return true
+	}
+	// fec0::/10 (deprecated site-local range).
+	if ip[0] == 0xfe && ip[1]&0xc0 == 0xc0 {
+		return true
+	}
+	if embedsDownloadIPv4(ip) {
+		return isPrivateDownloadIPv4(net.IPv4(ip[12], ip[13], ip[14], ip[15]))
+	}
+	return false
+}
+
+func isPrivateDownloadIPv4(ip net.IP) bool {
+	ip = ip.To4()
+	if ip == nil {
+		return true
+	}
+	a, b, c := ip[0], ip[1], ip[2]
+	return a == 0 ||
+		a == 10 ||
+		(a == 100 && b >= 64 && b <= 127) ||
+		a == 127 ||
+		(a == 169 && b == 254) ||
+		(a == 172 && b >= 16 && b <= 31) ||
+		(a == 192 && b == 0 && c == 0) ||
+		(a == 192 && b == 168) ||
+		(a == 198 && (b == 18 || b == 19)) ||
+		a >= 240
+}
+
+func embedsDownloadIPv4(ip net.IP) bool {
+	if len(ip) != net.IPv6len {
+		return false
+	}
+	allZero := func(start, end int) bool {
+		for _, b := range ip[start:end] {
+			if b != 0 {
+				return false
+			}
+		}
+		return true
+	}
+	// ::/96, ::ffff:0:0/96, and ::ffff:0:0:0/96 translated forms.
+	if allZero(0, 12) || (allZero(0, 10) && ip[10] == 0xff && ip[11] == 0xff) ||
+		(allZero(0, 8) && ip[8] == 0xff && ip[9] == 0xff && ip[10] == 0 && ip[11] == 0) {
+		return true
+	}
+	// 64:ff9b::/96 (well-known NAT64) and 64:ff9b:1::/48 (local-use NAT64).
+	if ip[0] == 0x00 && ip[1] == 0x64 && ip[2] == 0xff && ip[3] == 0x9b {
+		return allZero(4, 12) || (ip[4] == 0 && ip[5] == 1)
+	}
+	return false
+}
+
+// parseLegacyIPv4 implements the numeric forms normalized by WHATWG URL
+// parsers (for example 2130706433, 0x7f000001, and 0177.0.0.1).
+func parseLegacyIPv4(host string) net.IP {
+	parts := strings.Split(host, ".")
+	if len(parts) == 0 || len(parts) > 4 {
+		return nil
+	}
+	values := make([]uint64, len(parts))
+	for i, part := range parts {
+		if part == "" {
+			return nil
+		}
+		base := 10
+		digits := part
+		if strings.HasPrefix(part, "0x") || strings.HasPrefix(part, "0X") {
+			base, digits = 16, part[2:]
+		} else if len(part) > 1 && part[0] == '0' {
+			base, digits = 8, part[1:]
+		}
+		if digits == "" {
+			digits = "0"
+		}
+		value, err := strconv.ParseUint(digits, base, 32)
+		if err != nil {
+			return nil
+		}
+		values[i] = value
+	}
+	var raw uint64
+	switch len(values) {
+	case 1:
+		raw = values[0]
+	case 2:
+		if values[0] > 0xff || values[1] > 0xffffff {
+			return nil
+		}
+		raw = values[0]<<24 | values[1]
+	case 3:
+		if values[0] > 0xff || values[1] > 0xff || values[2] > 0xffff {
+			return nil
+		}
+		raw = values[0]<<24 | values[1]<<16 | values[2]
+	case 4:
+		for _, value := range values {
+			if value > 0xff {
+				return nil
+			}
+		}
+		raw = values[0]<<24 | values[1]<<16 | values[2]<<8 | values[3]
+	}
+	return net.IPv4(byte(raw>>24), byte(raw>>16), byte(raw>>8), byte(raw))
 }
 
 func normalizeMediaType(mediaType string) string {

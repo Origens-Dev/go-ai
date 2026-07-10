@@ -27,11 +27,6 @@ func StreamText(ctx context.Context, opts StreamTextOptions) (result *StreamText
 	if opts.Model == nil {
 		return nil, &SDKError{Kind: ErrInvalidArgument, Message: "model is required"}
 	}
-	var cancel context.CancelFunc
-	if opts.Timeout.Total > 0 {
-		ctx, cancel = context.WithTimeout(ctx, opts.Timeout.Total)
-	}
-
 	initialPrompt, err := standardizePrompt(opts.Instructions, opts.System, opts.Prompt, opts.Messages, opts.AllowSystemInMessages)
 	if err != nil {
 		return nil, err
@@ -43,6 +38,10 @@ func StreamText(ctx context.Context, opts StreamTextOptions) (result *StreamText
 	maxRetries := 2
 	if opts.MaxRetries != nil {
 		maxRetries = *opts.MaxRetries
+	}
+	var cancel context.CancelFunc
+	if opts.Timeout.Total > 0 {
+		ctx, cancel = context.WithTimeout(ctx, opts.Timeout.Total)
 	}
 
 	out := make(chan StreamPart)
@@ -58,6 +57,20 @@ func streamText(ctx context.Context, cancel context.CancelFunc, opts StreamTextO
 	defer close(out)
 
 	responseMessages := []Message{}
+	replayedToolResults, err := replayToolApprovals(ctx, initialPrompt.Messages, opts.Tools, opts.ToolApproval, opts.ToolApprovalSecret, nil, opts.Sandbox, opts.Timeout, opts.ToolExecution, opts.OnToolExecutionStart, opts.OnToolExecutionEnd)
+	if err != nil {
+		sendStreamError(ctx, opts, out, err)
+		return
+	}
+	if len(replayedToolResults) > 0 {
+		parts := make([]Part, len(replayedToolResults))
+		for i := range replayedToolResults {
+			parts[i] = replayedToolResults[i]
+			emitStreamChunk(ctx, opts, out, streamPartFromToolResult(replayedToolResults[i]))
+		}
+		responseMessages = append(responseMessages, Message{Role: RoleTool, Content: parts})
+		result.ToolResults = append(result.ToolResults, replayedToolResults...)
+	}
 	currentMessages := append([]Message{}, initialPrompt.Messages...)
 	var last *StepResult
 	pendingProviderResults := map[string]ToolCall{}
@@ -90,6 +103,7 @@ func streamText(ctx context.Context, cancel context.CancelFunc, opts StreamTextO
 		system := opts.System
 		stepMessages := append([]Message{}, currentMessages...)
 		stepTools := opts.Tools
+		stepToolOrder := append([]string(nil), opts.ToolOrder...)
 		if len(opts.ActiveTools) > 0 {
 			stepTools = FilterActiveTools(stepTools, opts.ActiveTools)
 		}
@@ -111,6 +125,7 @@ func streamText(ctx context.Context, cancel context.CancelFunc, opts StreamTextO
 				StepNumber:   stepNumber,
 				Messages:     append(stepMessages, responseMessages...),
 				ToolsContext: cloneAnyMap(toolsContext),
+				ToolOrder:    append([]string(nil), stepToolOrder...),
 				Sandbox:      opts.Sandbox,
 			})
 			if err != nil {
@@ -136,6 +151,9 @@ func streamText(ctx context.Context, cancel context.CancelFunc, opts StreamTextO
 				}
 				if prepared.Tools != nil {
 					stepTools = prepared.Tools
+				}
+				if prepared.ToolOrder != nil {
+					stepToolOrder = append([]string(nil), prepared.ToolOrder...)
 				}
 				if prepared.ToolChoice.Type != "" {
 					toolChoice = prepared.ToolChoice
@@ -190,7 +208,7 @@ func streamText(ctx context.Context, cancel context.CancelFunc, opts StreamTextO
 			Seed:             opts.Seed,
 			Reasoning:        opts.Reasoning,
 			ResponseFormat:   outputResponseFormat(opts.Output, opts.ResponseFormat),
-			Tools:            prepareModelTools(stepTools, toolChoice),
+			Tools:            prepareModelToolsWithOrder(stepTools, toolChoice, stepToolOrder),
 			ToolChoice:       normalizeToolChoice(toolChoice),
 			ProviderOptions:  providerOptions,
 			Headers:          withUserAgent(opts.Headers, "go-ai/"+Version),
@@ -198,6 +216,12 @@ func streamText(ctx context.Context, cancel context.CancelFunc, opts StreamTextO
 
 		var streamResult *LanguageModelStreamResult
 		callID := emitLanguageModelCallStart(ctx, opts.Telemetry, opts.TelemetryOptions, OperationStreamText, model, stepNumber, callOptions)
+		if opts.OnStepStart != nil {
+			opts.OnStepStart(StepStartEvent{Operation: OperationStreamText, CallID: callID, StepNumber: stepNumber, Provider: model.Provider(), ModelID: model.ModelID(), Messages: append([]Message(nil), promptMessages...)})
+		}
+		if opts.OnLanguageModelCallStart != nil {
+			opts.OnLanguageModelCallStart(LanguageModelCallStartEvent{Operation: OperationStreamText, CallID: callID, StepNumber: stepNumber, Provider: model.Provider(), ModelID: model.ModelID(), Options: callOptions})
+		}
 		if !emitStreamChunk(ctx, opts, out, withStepScope(StreamPart{Type: "start-step"}, stepScope)) {
 			if cancelStep != nil {
 				cancelStep()
@@ -256,6 +280,12 @@ func streamText(ctx context.Context, cancel context.CancelFunc, opts StreamTextO
 		})
 		accumulated := consumeStreamStep(stepCtx, opts, streamResult, instructions, system, promptMessages, stepTools, cloneAnyMap(toolsContext), stepScope, out)
 		emitLanguageModelStreamCallEnd(ctx, opts.Telemetry, opts.TelemetryOptions, OperationStreamText, model, stepNumber, callID, streamResult, accumulated)
+		if opts.OnLanguageModelCallEnd != nil {
+			opts.OnLanguageModelCallEnd(LanguageModelCallEndEvent{
+				Operation: OperationStreamText, CallID: callID, StepNumber: stepNumber, Provider: model.Provider(), ModelID: model.ModelID(), Result: streamResult,
+				Content: append([]Part(nil), accumulated.content...), FinishReason: accumulated.finishReason, Usage: accumulated.usage, Response: streamResult.Response,
+			})
+		}
 		responseFinished := time.Now()
 		if accumulated.aborted {
 			if cancelStep != nil {
@@ -375,7 +405,7 @@ func streamText(ctx context.Context, cancel context.CancelFunc, opts StreamTextO
 		result.ToolResults = append(result.ToolResults, step.ToolResults...)
 		result.Files = append(result.Files, step.Files...)
 		result.Sources = append(result.Sources, step.Sources...)
-		emitStepFinish(ctx, opts.Telemetry, opts.TelemetryOptions, opts.OnStepFinish, EventStreamTextStepFinish, OperationStreamText, step)
+		emitStepFinish(ctx, opts.Telemetry, opts.TelemetryOptions, stepEndCallback(opts.OnStepEnd, opts.OnStepFinish), EventStreamTextStepFinish, OperationStreamText, step)
 
 		emitStreamChunk(ctx, opts, out, withStepScope(StreamPart{Type: "finish-step", FinishReason: accumulated.finishReason, Usage: accumulated.usage, Warnings: accumulated.warnings, ProviderMetadata: accumulated.providerMetadata}, stepScope))
 
@@ -425,6 +455,7 @@ type streamStepAccumulation struct {
 	lastOutputChunkAt       time.Time
 	outputChunkGaps         []time.Duration
 	timeBetweenOutputChunks *OutputChunkTimingStats
+	outputSeen              bool
 	aborted                 bool
 	abortErr                error
 	abortReason             string
@@ -446,6 +477,7 @@ func (a *streamStepAccumulation) recordOutputChunk(started time.Time, part Strea
 	if !isGeneratedOutputChunk(part) {
 		return
 	}
+	a.outputSeen = true
 	now := time.Now()
 	if a.timeToFirstOutput == 0 {
 		a.timeToFirstOutput = now.Sub(started)
@@ -500,6 +532,9 @@ func consumeStreamStep(ctx context.Context, opts StreamTextOptions, streamResult
 					acc.aborted = true
 					acc.abortErr = err
 					acc.abortReason = abortReason(err)
+				}
+				if !acc.outputSeen {
+					acc.err = NewNoOutputGeneratedError("Model stream ended without producing output.", nil)
 				}
 				return acc
 			}
@@ -602,17 +637,36 @@ func consumeStreamStep(ctx context.Context, opts StreamTextOptions, streamResult
 					acc.err = err
 					return acc
 				}
+				if decision.Type != ApprovalDecisionNotApplicable {
+					request, response, err := approvalPartsForCall(opts.ToolApprovalSecret, call, decision)
+					if err != nil {
+						acc.err = err
+						return acc
+					}
+					acc.content = append(acc.content, request)
+					emitStreamChunk(ctx, opts, out, withStepScope(StreamPart{
+						Type: "tool-approval-request", ID: request.ApprovalID, ToolCallID: request.ToolCallID,
+						Signature: request.Signature, IsAutomatic: boolPtr(request.IsAutomatic),
+					}, stepScope))
+					if response != nil {
+						acc.content = append(acc.content, *response)
+						emitStreamChunk(ctx, opts, out, withStepScope(StreamPart{
+							Type: "tool-approval-response", ID: response.ApprovalID, Approved: boolPtr(response.Approved),
+							Reason: response.Reason, ProviderExecuted: boolPtr(response.ProviderExecuted),
+						}, stepScope))
+					}
+				}
 				if ApprovalBlocksToolExecution(decision) {
 					blocked[call.ToolCallID] = true
-					result := ToolResultPart{
-						ToolCallID: call.ToolCallID,
-						ToolName:   call.ToolName,
-						Input:      call.Input,
-						Output:     ToolResultOutput{Type: "execution-denied", Reason: decision.Reason},
+					if decision.Type == ApprovalDecisionDenied {
+						result := ToolResultPart{
+							ToolCallID: call.ToolCallID, ToolName: call.ToolName, Input: call.Input,
+							Output: ToolResultOutput{Type: "execution-denied", Reason: decision.Reason},
+						}
+						acc.content = append(acc.content, result)
+						acc.toolResults = append(acc.toolResults, result)
+						emitStreamChunk(ctx, opts, out, withStepScope(streamPartFromToolResult(result), stepScope))
 					}
-					acc.content = append(acc.content, result)
-					acc.toolResults = append(acc.toolResults, result)
-					emitStreamChunk(ctx, opts, out, withStepScope(streamPartFromToolResult(result), stepScope))
 				}
 			}
 			if blocked[call.ToolCallID] {

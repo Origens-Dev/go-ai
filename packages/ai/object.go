@@ -98,7 +98,7 @@ func GenerateObject(ctx context.Context, opts GenerateObjectOptions) (objectResu
 		Reasoning:        reasoningFromParts(result.Content),
 		Text:             text,
 	}
-	emitFinish(ctx, opts.Telemetry, opts.TelemetryOptions, opts.OnFinish, EventGenerateObjectFinish, OperationGenerateObject, objectResult, map[string]any{
+	emitFinish(ctx, opts.Telemetry, opts.TelemetryOptions, endCallback(opts.OnEnd, opts.OnFinish), EventGenerateObjectFinish, OperationGenerateObject, objectResult, map[string]any{
 		"finish_reason":     objectResult.FinishReason,
 		"raw_finish_reason": objectResult.RawFinishReason,
 		"usage":             objectResult.Usage,
@@ -144,6 +144,8 @@ func StreamObject(ctx context.Context, opts StreamObjectOptions) (*StreamObjectR
 
 	out := make(chan ObjectStreamPart)
 	elements := make(chan any, 16)
+	initialRequest := stream.Request
+	initialResponse := stream.Response
 	go func() {
 		defer close(out)
 		defer close(elements)
@@ -232,7 +234,7 @@ func StreamObject(ctx context.Context, opts StreamObjectOptions) (*StreamObjectR
 			}
 		}
 	}()
-	return &StreamObjectResult{Stream: out, Elements: elements, Request: stream.Request, Response: stream.Response}, nil
+	return &StreamObjectResult{Stream: out, Elements: elements, Request: initialRequest, Response: initialResponse}, nil
 }
 
 func sendObjectElement(out chan<- any, element any) {

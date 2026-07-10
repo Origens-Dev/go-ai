@@ -440,6 +440,7 @@ func ExtractJSONMiddleware(options ...ExtractJSONMiddlewareOptions) LanguageMode
 		opts = options[0]
 	}
 	transform := opts.Transform
+	hasCustomTransform := transform != nil
 	if transform == nil {
 		transform = defaultExtractJSONTransform
 	}
@@ -453,9 +454,128 @@ func ExtractJSONMiddleware(options ...ExtractJSONMiddlewareOptions) LanguageMode
 			return result, nil
 		},
 		Stream: func(ctx context.Context, model LanguageModel, callOpts LanguageModelCallOptions, next StreamMiddlewareNext) (*LanguageModelStreamResult, error) {
-			return next(ctx, callOpts)
+			result, err := next(ctx, callOpts)
+			if err != nil || result == nil || result.Stream == nil {
+				return result, err
+			}
+			result.Stream = transformExtractJSONStream(ctx, result.Stream, transform, hasCustomTransform)
+			return result, nil
 		},
 	}
+}
+
+type extractJSONStreamBlock struct {
+	start          StreamPart
+	phase          string
+	buffer         string
+	prefixStripped bool
+}
+
+func transformExtractJSONStream(ctx context.Context, in <-chan StreamPart, transform func(string) string, custom bool) <-chan StreamPart {
+	out := make(chan StreamPart)
+	go func() {
+		defer close(out)
+		blocks := map[string]*extractJSONStreamBlock{}
+		send := func(part StreamPart) bool {
+			select {
+			case <-ctx.Done():
+				return false
+			case out <- part:
+				return true
+			}
+		}
+		for part := range in {
+			switch part.Type {
+			case "text-start":
+				phase := "prefix"
+				if custom {
+					phase = "buffering"
+				}
+				blocks[part.ID] = &extractJSONStreamBlock{start: part, phase: phase}
+				continue
+			case "text-delta":
+				block := blocks[part.ID]
+				if block == nil {
+					if !send(part) {
+						return
+					}
+					continue
+				}
+				block.buffer += part.TextDelta
+				if block.phase == "buffering" {
+					continue
+				}
+				if block.phase == "prefix" {
+					switch {
+					case block.buffer != "" && !strings.HasPrefix(block.buffer, "`"):
+						block.phase = "streaming"
+						if !send(block.start) {
+							return
+						}
+					case strings.HasPrefix(block.buffer, "```") && strings.Contains(block.buffer, "\n"):
+						match := regexp.MustCompile("^```(?:json)?\\s*\\n").FindString(block.buffer)
+						if match != "" {
+							block.buffer = strings.TrimPrefix(block.buffer, match)
+							block.prefixStripped = true
+						}
+						block.phase = "streaming"
+						if !send(block.start) {
+							return
+						}
+					case len(block.buffer) >= 3 && !strings.HasPrefix(block.buffer, "```"):
+						block.phase = "streaming"
+						if !send(block.start) {
+							return
+						}
+					}
+				}
+				if block.phase == "streaming" && len(block.buffer) > 12 {
+					delta := block.buffer[:len(block.buffer)-12]
+					block.buffer = block.buffer[len(block.buffer)-12:]
+					if !send(StreamPart{Type: "text-delta", ID: part.ID, TextDelta: delta}) {
+						return
+					}
+				}
+				continue
+			case "text-end":
+				block := blocks[part.ID]
+				if block == nil {
+					if !send(part) {
+						return
+					}
+					continue
+				}
+				if block.phase == "prefix" || block.phase == "buffering" {
+					if !send(block.start) {
+						return
+					}
+				}
+				remaining := block.buffer
+				if block.phase == "buffering" || block.phase == "prefix" {
+					remaining = transform(remaining)
+				} else {
+					remaining = stripMarkdownCodeFenceSuffix(remaining)
+				}
+				if remaining != "" && !send(StreamPart{Type: "text-delta", ID: part.ID, TextDelta: remaining}) {
+					return
+				}
+				if !send(part) {
+					return
+				}
+				delete(blocks, part.ID)
+				continue
+			}
+			if !send(part) {
+				return
+			}
+		}
+	}()
+	return out
+}
+
+func stripMarkdownCodeFenceSuffix(text string) string {
+	text = regexp.MustCompile("\\n?```\\s*$").ReplaceAllString(text, "")
+	return strings.TrimRight(text, " \t\r\n")
 }
 
 func defaultExtractJSONTransform(text string) string {

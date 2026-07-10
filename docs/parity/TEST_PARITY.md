@@ -2,20 +2,16 @@
 
 This file tracks test parity for upstream capabilities that have a Go implementation in this repo. It does not count TypeScript-only type tests, React/browser transports, Node stream helpers with no Go API, or provider families that have not been ported.
 
-Upstream reference: Vercel AI SDK `main` at `9f1e1ba4b93b514f6cca1c8452e6a1fb23e44907`.
+Upstream reference: Vercel AI SDK `main` at `58d77caf6733f49431b0864bd71adbe143958aeb` (`ai@7.0.20`).
 
 ## Coverage Summary
 
-| Area | Applicable upstream test files | Go-covered files | Coverage |
-| --- | ---: | ---: | ---: |
-| `packages/ai` core/runtime | 82 | 82 | 100.0% |
-| `packages/bedrock` text/Converse provider | 10 | 10 | 100.0% |
-| `packages/vertex` Gemini text provider | 5 | 5 | 100.0% |
-| `packages/anthropic` Messages text provider | 8 | 8 | 100.0% |
-| `packages/community/openrouter` chat/embedding connector | 3 | 3 | 100.0% |
-| **Total** | **108** | **108** | **100.0%** |
+The earlier numeric file-count snapshot was tied to canary.152 and is no longer presented as a current percentage. The current release gate is behavioral: every ported P0/P1 capability listed below has focused Go coverage and `go test ./...` must pass. P2 streaming transcription, expanded video, and experimental realtime tests enter the gate only when those APIs are ported.
 
-The total is the release gate: current scoped test parity is complete for the upstream/community surfaces that have Go implementations in this repo.
+| Area | Current gate |
+| --- | --- |
+| `packages/ai` P0/P1 core/runtime | Signed approvals, error redaction, SSRF regressions, deterministic tools, drift fingerprints, lifecycle aliases, empty streams, and streaming JSON extraction |
+| Existing provider packages | Existing Bedrock, Vertex, Anthropic, and community OpenRouter suites remain required |
 
 ## Scope Rules
 
@@ -42,6 +38,7 @@ Current Go test files added or expanded for parity:
 - `packages/ai/parity_test.go`
 - `packages/ai/tool_parity_test.go`
 - `packages/ai/include_telemetry_parity_test.go`
+- `packages/ai/tool_security_test.go`
 - `packages/anthropic/anthropic_test.go`
 - `packages/community/openrouter/openrouter_test.go`
 - `packages/bedrock/bedrock_test.go`

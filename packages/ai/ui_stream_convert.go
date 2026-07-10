@@ -61,7 +61,9 @@ type ToUIMessageStreamOptions struct {
 	ToUIMessageChunkOptions
 	OriginalMessages []UIMessage
 	GenerateID       func() string
+	OnStepEnd        func(UIMessageStreamStepFinishEvent) error
 	OnStepFinish     func(UIMessageStreamStepFinishEvent) error
+	OnEnd            func(UIMessageStreamFinishEvent) error
 	OnFinish         func(UIMessageStreamFinishEvent) error
 	BufferSize       int
 }
@@ -132,10 +134,14 @@ func ToUIMessageChunk(part StreamPart, options ...ToUIMessageChunkOptions) (UIMe
 		}
 		return withToolChunkMetadata(UIMessageChunk{Type: chunkType, ToolCallID: part.ToolCallID, ToolName: part.ToolName, Input: input, ErrorText: errorText}, part), true
 	case "tool-approval-request":
-		return UIMessageChunk{Type: UIMessageChunkTypeToolApprovalRequest, ApprovalID: part.ID, ToolCallID: part.ToolCallID}, true
+		return UIMessageChunk{Type: UIMessageChunkTypeToolApprovalRequest, ApprovalID: part.ID, ToolCallID: part.ToolCallID, Signature: part.Signature, IsAutomatic: part.IsAutomatic}, true
 	case "tool-approval-response":
-		approved := true
-		return withToolChunkMetadata(UIMessageChunk{Type: UIMessageChunkTypeToolApprovalResponse, ApprovalID: part.ID, Approved: &approved, Reason: part.AbortReason}, part), true
+		approved := part.Approved
+		if approved == nil {
+			value := true
+			approved = &value
+		}
+		return withToolChunkMetadata(UIMessageChunk{Type: UIMessageChunkTypeToolApprovalResponse, ApprovalID: part.ID, Approved: approved, Reason: firstNonEmpty(part.Reason, part.AbortReason)}, part), true
 	case "tool-result":
 		return toolResultUIMessageChunk(part, onError), true
 	case "tool-error":
@@ -196,7 +202,9 @@ func ToUIMessageStream(ctx context.Context, stream <-chan StreamPart, options ..
 		OriginalMessages:  opts.OriginalMessages,
 		ResponseMessageID: messageID,
 		GenerateID:        opts.GenerateID,
+		OnStepEnd:         opts.OnStepEnd,
 		OnStepFinish:      opts.OnStepFinish,
+		OnEnd:             opts.OnEnd,
 		OnFinish:          opts.OnFinish,
 		OnError:           opts.OnError,
 		Execute: func(writer UIMessageStreamWriter) error {

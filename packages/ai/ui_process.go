@@ -164,7 +164,9 @@ type HandleUIMessageStreamFinishOptions struct {
 	MessageID        string
 	OriginalMessages []UIMessage
 	OnError          func(error)
+	OnStepEnd        func(UIMessageStreamStepFinishEvent) error
 	OnStepFinish     func(UIMessageStreamStepFinishEvent) error
+	OnEnd            func(UIMessageStreamFinishEvent) error
 	OnFinish         func(UIMessageStreamFinishEvent) error
 	BufferSize       int
 }
@@ -244,16 +246,18 @@ func HandleUIMessageStreamFinish(stream <-chan UIMessageChunk, opts HandleUIMess
 			messageID = lastMessage.ID
 		}
 
-		processCallbacks := opts.OnStepFinish != nil || opts.OnFinish != nil
+		onStepEnd := firstUIMessageStepEndCallback(opts.OnStepEnd, opts.OnStepFinish)
+		onEnd := firstUIMessageEndCallback(opts.OnEnd, opts.OnFinish)
+		processCallbacks := onStepEnd != nil || onEnd != nil
 		state := CreateStreamingUIMessageState(lastMessage, messageID)
 		isAborted := false
 		finishCalled := false
 
 		callOnStepFinish := func() {
-			if opts.OnStepFinish == nil {
+			if onStepEnd == nil {
 				return
 			}
-			if err := opts.OnStepFinish(UIMessageStreamStepFinishEvent{
+			if err := onStepEnd(UIMessageStreamStepFinishEvent{
 				IsContinuation:  isContinuation(originalMessages, state.Message),
 				ResponseMessage: cloneUIMessage(state.Message),
 				Messages:        messagesWithResponse(originalMessages, state.Message),
@@ -263,11 +267,11 @@ func HandleUIMessageStreamFinish(stream <-chan UIMessageChunk, opts HandleUIMess
 		}
 
 		callOnFinish := func() {
-			if finishCalled || opts.OnFinish == nil {
+			if finishCalled || onEnd == nil {
 				return
 			}
 			finishCalled = true
-			if err := opts.OnFinish(UIMessageStreamFinishEvent{
+			if err := onEnd(UIMessageStreamFinishEvent{
 				IsAborted:       isAborted,
 				IsContinuation:  isContinuation(originalMessages, state.Message),
 				ResponseMessage: cloneUIMessage(state.Message),
@@ -332,6 +336,24 @@ func HandleUIMessageStreamFinish(stream <-chan UIMessageChunk, opts HandleUIMess
 		}
 	}()
 	return out
+}
+
+func firstUIMessageStepEndCallback(callbacks ...func(UIMessageStreamStepFinishEvent) error) func(UIMessageStreamStepFinishEvent) error {
+	for _, callback := range callbacks {
+		if callback != nil {
+			return callback
+		}
+	}
+	return nil
+}
+
+func firstUIMessageEndCallback(callbacks ...func(UIMessageStreamFinishEvent) error) func(UIMessageStreamFinishEvent) error {
+	for _, callback := range callbacks {
+		if callback != nil {
+			return callback
+		}
+	}
+	return nil
 }
 
 func ApplyUIMessageChunk(state *StreamingUIMessageState, chunk UIMessageChunk) error {
@@ -460,23 +482,29 @@ func ApplyUIMessageChunk(state *StreamingUIMessageState, chunk UIMessageChunk) e
 		part.State = "approval-requested"
 		part.Approval = &struct {
 			ID          string `json:"id"`
+			Signature   string `json:"signature,omitempty"`
 			Approved    *bool  `json:"approved,omitempty"`
 			Reason      string `json:"reason,omitempty"`
 			IsAutomatic bool   `json:"isAutomatic,omitempty"`
-		}{ID: chunk.ApprovalID, IsAutomatic: boolPtrValue(chunk.IsAutomatic)}
+		}{ID: chunk.ApprovalID, Signature: chunk.Signature, IsAutomatic: boolPtrValue(chunk.IsAutomatic)}
 	case UIMessageChunkTypeToolApprovalResponse:
 		part, err := getStreamingToolPartByApprovalID(state, chunk.ApprovalID)
 		if err != nil {
 			return err
 		}
 		automatic := part.Approval != nil && part.Approval.IsAutomatic
+		signature := ""
+		if part.Approval != nil {
+			signature = part.Approval.Signature
+		}
 		part.State = "approval-responded"
 		part.Approval = &struct {
 			ID          string `json:"id"`
+			Signature   string `json:"signature,omitempty"`
 			Approved    *bool  `json:"approved,omitempty"`
 			Reason      string `json:"reason,omitempty"`
 			IsAutomatic bool   `json:"isAutomatic,omitempty"`
-		}{ID: chunk.ApprovalID, Approved: chunk.Approved, Reason: chunk.Reason, IsAutomatic: automatic}
+		}{ID: chunk.ApprovalID, Signature: signature, Approved: chunk.Approved, Reason: chunk.Reason, IsAutomatic: automatic}
 		if chunk.ProviderExecuted != nil {
 			part.ProviderExecuted = *chunk.ProviderExecuted
 		}

@@ -49,6 +49,51 @@ func TestGenerateTextLifecycleEvents(t *testing.T) {
 	}
 }
 
+func TestGenerateTextStableLifecycleCallbacksAndAliasPrecedence(t *testing.T) {
+	var order []string
+	finishAliasCalled := false
+	result, err := GenerateText(context.Background(), GenerateTextOptions{
+		Model: mockModel{}, Prompt: "hello",
+		OnStart: func(StartEvent) { order = append(order, "start") },
+		OnStepStart: func(event StepStartEvent) {
+			if event.StepNumber != 0 || len(event.Messages) == 0 {
+				t.Fatalf("step start = %#v", event)
+			}
+			order = append(order, "step-start")
+		},
+		OnLanguageModelCallStart: func(LanguageModelCallStartEvent) { order = append(order, "model-start") },
+		OnLanguageModelCallEnd:   func(LanguageModelCallEndEvent) { order = append(order, "model-end") },
+		OnStepEnd:                func(StepFinishEvent) { order = append(order, "step-end") },
+		OnStepFinish:             func(StepFinishEvent) { t.Fatal("OnStepFinish should not run when OnStepEnd is set") },
+		OnEnd:                    func(FinishEvent) { order = append(order, "end") },
+		OnFinish:                 func(FinishEvent) { finishAliasCalled = true },
+	})
+	if err != nil || result == nil {
+		t.Fatalf("GenerateText failed: %v", err)
+	}
+	want := []string{"start", "step-start", "model-start", "model-end", "step-end", "end"}
+	if !reflect.DeepEqual(order, want) || finishAliasCalled {
+		t.Fatalf("callback order = %#v finishAlias=%v", order, finishAliasCalled)
+	}
+}
+
+func TestEmbedOnEndPrecedesOnFinishAlias(t *testing.T) {
+	model := &mockEmbeddingModel{}
+	endCalled := false
+	finishCalled := false
+	_, err := Embed(context.Background(), EmbedOptions{
+		Model: model, Value: "hello",
+		OnEnd:    func(FinishEvent) { endCalled = true },
+		OnFinish: func(FinishEvent) { finishCalled = true },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !endCalled || finishCalled {
+		t.Fatalf("end=%v finish=%v", endCalled, finishCalled)
+	}
+}
+
 func TestStreamTextLifecycleChunkAndErrorEvents(t *testing.T) {
 	telemetry := &recordingTelemetry{}
 	var chunks []string

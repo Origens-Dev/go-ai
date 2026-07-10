@@ -67,8 +67,9 @@ func TestEmbedManyHonorsModelParallelSupport(t *testing.T) {
 }
 
 type mockEmbeddingModel struct {
-	max   int
-	calls [][]string
+	max     int
+	calls   [][]string
+	callsMu sync.Mutex
 }
 
 func (m *mockEmbeddingModel) Provider() string { return "mock" }
@@ -105,7 +106,9 @@ func (m *serialEmbeddingModel) DoEmbed(_ context.Context, opts EmbeddingModelCal
 	return &EmbeddingModelResult{Embeddings: embeddings}, nil
 }
 func (m *mockEmbeddingModel) DoEmbed(_ context.Context, opts EmbeddingModelCallOptions) (*EmbeddingModelResult, error) {
+	m.callsMu.Lock()
 	m.calls = append(m.calls, append([]string{}, opts.Values...))
+	m.callsMu.Unlock()
 	embeddings := make([][]float64, len(opts.Values))
 	for i, value := range opts.Values {
 		embeddings[i] = []float64{float64(len(value))}

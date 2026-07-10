@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-const Version = "0.2.7"
+const Version = "0.3.0"
 
 type ProviderOptions map[string]any
 type ProviderMetadata map[string]any
@@ -335,6 +335,10 @@ type StreamPart struct {
 	ToolName         string
 	ToolInputDelta   string
 	ToolInput        string
+	Signature        string
+	Approved         *bool
+	IsAutomatic      *bool
+	Reason           string
 	Content          Part
 	FinishReason     FinishReason
 	Usage            Usage

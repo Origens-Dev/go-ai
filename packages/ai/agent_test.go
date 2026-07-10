@@ -47,6 +47,25 @@ func TestToolLoopAgentGenerateUsesSettingsAndDefaults(t *testing.T) {
 	}
 }
 
+func TestToolLoopAgentForwardsToolOrder(t *testing.T) {
+	model := &sequenceModel{generate: func(opts LanguageModelCallOptions) (*LanguageModelGenerateResult, error) {
+		var names []string
+		for _, tool := range opts.Tools {
+			names = append(names, tool.Name)
+		}
+		if want := []string{"b", "a", "c"}; !reflect.DeepEqual(names, want) {
+			t.Fatalf("tools = %#v, want %#v", names, want)
+		}
+		return &LanguageModelGenerateResult{Content: []Part{TextPart{Text: "ok"}}, FinishReason: FinishReason{Unified: FinishStop}}, nil
+	}}
+	agent := NewToolLoopAgent(ToolLoopAgentSettings{
+		Model: model, Tools: map[string]Tool{"c": {}, "a": {}, "b": {}}, ToolOrder: []string{"b"},
+	})
+	if _, err := agent.Generate(context.Background(), AgentCallOptions{Prompt: "hello"}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestToolLoopAgentPrepareCallCanOverridePrompt(t *testing.T) {
 	model := NewMockLanguageModel("agent-model")
 	agent := NewToolLoopAgent(ToolLoopAgentSettings{

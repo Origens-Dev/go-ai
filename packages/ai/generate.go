@@ -42,6 +42,17 @@ func GenerateText(ctx context.Context, opts GenerateTextOptions) (result *Genera
 	}
 
 	responseMessages := []Message{}
+	replayedToolResults, err := replayToolApprovals(ctx, initialPrompt.Messages, opts.Tools, opts.ToolApproval, opts.ToolApprovalSecret, nil, opts.Sandbox, opts.Timeout, opts.ToolExecution, opts.OnToolExecutionStart, opts.OnToolExecutionEnd)
+	if err != nil {
+		return nil, err
+	}
+	if len(replayedToolResults) > 0 {
+		parts := make([]Part, len(replayedToolResults))
+		for i := range replayedToolResults {
+			parts[i] = replayedToolResults[i]
+		}
+		responseMessages = append(responseMessages, Message{Role: RoleTool, Content: parts})
+	}
 	steps := []*StepResult{}
 	currentMessages := append([]Message{}, initialPrompt.Messages...)
 	var last *StepResult
@@ -69,6 +80,7 @@ func GenerateText(ctx context.Context, opts GenerateTextOptions) (result *Genera
 		system := opts.System
 		stepMessages := append([]Message{}, currentMessages...)
 		stepTools := opts.Tools
+		stepToolOrder := append([]string(nil), opts.ToolOrder...)
 		if len(opts.ActiveTools) > 0 {
 			stepTools = FilterActiveTools(stepTools, opts.ActiveTools)
 		}
@@ -86,6 +98,7 @@ func GenerateText(ctx context.Context, opts GenerateTextOptions) (result *Genera
 				StepNumber:   stepNumber,
 				Messages:     append(stepMessages, responseMessages...),
 				ToolsContext: cloneAnyMap(toolsContext),
+				ToolOrder:    append([]string(nil), stepToolOrder...),
 				Sandbox:      opts.Sandbox,
 			})
 			if err != nil {
@@ -107,6 +120,9 @@ func GenerateText(ctx context.Context, opts GenerateTextOptions) (result *Genera
 				}
 				if prepared.Tools != nil {
 					stepTools = prepared.Tools
+				}
+				if prepared.ToolOrder != nil {
+					stepToolOrder = append([]string(nil), prepared.ToolOrder...)
 				}
 				if prepared.ToolChoice.Type != "" {
 					toolChoice = prepared.ToolChoice
@@ -149,7 +165,7 @@ func GenerateText(ctx context.Context, opts GenerateTextOptions) (result *Genera
 			Seed:             opts.Seed,
 			Reasoning:        opts.Reasoning,
 			ResponseFormat:   outputResponseFormat(opts.Output, opts.ResponseFormat),
-			Tools:            prepareModelTools(stepTools, toolChoice),
+			Tools:            prepareModelToolsWithOrder(stepTools, toolChoice, stepToolOrder),
 			ToolChoice:       normalizeToolChoice(toolChoice),
 			ProviderOptions:  providerOptions,
 			Headers:          withUserAgent(opts.Headers, "go-ai/"+Version),
@@ -157,6 +173,12 @@ func GenerateText(ctx context.Context, opts GenerateTextOptions) (result *Genera
 
 		var modelResult *LanguageModelGenerateResult
 		callID := emitLanguageModelCallStart(ctx, opts.Telemetry, opts.TelemetryOptions, OperationGenerateText, model, stepNumber, callOptions)
+		if opts.OnStepStart != nil {
+			opts.OnStepStart(StepStartEvent{Operation: OperationGenerateText, CallID: callID, StepNumber: stepNumber, Provider: model.Provider(), ModelID: model.ModelID(), Messages: append([]Message(nil), promptMessages...)})
+		}
+		if opts.OnLanguageModelCallStart != nil {
+			opts.OnLanguageModelCallStart(LanguageModelCallStartEvent{Operation: OperationGenerateText, CallID: callID, StepNumber: stepNumber, Provider: model.Provider(), ModelID: model.ModelID(), Options: callOptions})
+		}
 		err = retry.Do(stepCtx, maxRetries, func() error {
 			err := executeLanguageModelCall(stepCtx, opts.Telemetry, OperationGenerateText, model, stepNumber, callID, func(callCtx context.Context) error {
 				result, err := model.DoGenerate(callCtx, callOptions)
@@ -178,6 +200,12 @@ func GenerateText(ctx context.Context, opts GenerateTextOptions) (result *Genera
 			return nil, &SDKError{Kind: ErrNoOutputGenerated, Message: "model returned nil result"}
 		}
 		emitLanguageModelCallEnd(ctx, opts.Telemetry, opts.TelemetryOptions, OperationGenerateText, model, stepNumber, callID, modelResult)
+		if opts.OnLanguageModelCallEnd != nil {
+			opts.OnLanguageModelCallEnd(LanguageModelCallEndEvent{
+				Operation: OperationGenerateText, CallID: callID, StepNumber: stepNumber, Provider: model.Provider(), ModelID: model.ModelID(), Result: modelResult,
+				Content: append([]Part(nil), modelResult.Content...), FinishReason: modelResult.FinishReason, Usage: modelResult.Usage, Response: modelResult.Response,
+			})
+		}
 		responseFinished := time.Now()
 
 		toolCalls, parsedContent, err := parseToolCalls(stepCtx, modelResult.Content, parseToolCallsOptions{
@@ -196,6 +224,7 @@ func GenerateText(ctx context.Context, opts GenerateTextOptions) (result *Genera
 		clientToolResults = clientToolResults[:0]
 		blocked := map[string]bool{}
 		precomputedToolResults := map[string]ToolResultPart{}
+		var approvalResponses []Part
 
 		for _, call := range toolCalls {
 			if call.ProviderExecuted {
@@ -215,14 +244,23 @@ func GenerateText(ctx context.Context, opts GenerateTextOptions) (result *Genera
 				if err != nil {
 					return nil, err
 				}
+				if decision.Type != ApprovalDecisionNotApplicable {
+					request, response, err := approvalPartsForCall(opts.ToolApprovalSecret, call, decision)
+					if err != nil {
+						return nil, err
+					}
+					parsedContent = append(parsedContent, request)
+					if response != nil {
+						approvalResponses = append(approvalResponses, *response)
+					}
+				}
 				if ApprovalBlocksToolExecution(decision) {
 					blocked[call.ToolCallID] = true
-					output := ToolResultOutput{Type: "execution-denied", Reason: decision.Reason}
-					precomputedToolResults[call.ToolCallID] = ToolResultPart{
-						ToolCallID: call.ToolCallID,
-						ToolName:   call.ToolName,
-						Input:      call.Input,
-						Output:     output,
+					if decision.Type == ApprovalDecisionDenied {
+						output := ToolResultOutput{Type: "execution-denied", Reason: decision.Reason}
+						precomputedToolResults[call.ToolCallID] = ToolResultPart{
+							ToolCallID: call.ToolCallID, ToolName: call.ToolName, Input: call.Input, Output: output,
+						}
 					}
 				}
 			}
@@ -237,11 +275,12 @@ func GenerateText(ctx context.Context, opts GenerateTextOptions) (result *Genera
 		}
 
 		stepContent := append([]Part{}, parsedContent...)
+		stepContent = append(stepContent, approvalResponses...)
 		for _, result := range clientToolResults {
 			stepContent = append(stepContent, result)
 		}
 
-		stepResponseMessages := toResponseMessages(parsedContent, clientToolResults)
+		stepResponseMessages := toResponseMessages(stepContent, clientToolResults)
 		responseMessages = append(responseMessages, stepResponseMessages...)
 		stepResponse := modelResult.Response
 		stepResponse.Messages = append([]Message{}, stepResponseMessages...)
@@ -280,7 +319,7 @@ func GenerateText(ctx context.Context, opts GenerateTextOptions) (result *Genera
 		applyIncludeToStep(last, opts.Include)
 		LogWarnings(modelResult.Warnings, model.Provider(), model.ModelID())
 		steps = append(steps, last)
-		emitStepFinish(ctx, opts.Telemetry, opts.TelemetryOptions, opts.OnStepFinish, EventGenerateTextStepFinish, OperationGenerateText, last)
+		emitStepFinish(ctx, opts.Telemetry, opts.TelemetryOptions, stepEndCallback(opts.OnStepEnd, opts.OnStepFinish), EventGenerateTextStepFinish, OperationGenerateText, last)
 
 		shouldStop, err := stopConditionMet(ctx, stopWhen, steps)
 		if err != nil {
@@ -325,7 +364,7 @@ func GenerateText(ctx context.Context, opts GenerateTextOptions) (result *Genera
 		ResponseMessages: append([]Message{}, responseMessages...),
 		FinalStep:        last,
 		ToolCalls:        toolCalls,
-		ToolResults:      toolResults,
+		ToolResults:      append(append([]ToolResultPart{}, replayedToolResults...), toolResults...),
 		Files:            files,
 		Sources:          sources,
 	}
@@ -346,11 +385,32 @@ func GenerateText(ctx context.Context, opts GenerateTextOptions) (result *Genera
 }
 
 func prepareModelTools(tools map[string]Tool, choice ToolChoice) []ModelTool {
+	return prepareModelToolsWithOrder(tools, choice, nil)
+}
+
+func prepareModelToolsWithOrder(tools map[string]Tool, choice ToolChoice, toolOrder []string) []ModelTool {
 	if len(tools) == 0 || choice.Type == "none" {
 		return nil
 	}
 	out := make([]ModelTool, 0, len(tools))
-	for name, tool := range tools {
+	seen := map[string]bool{}
+	names := make([]string, 0, len(tools))
+	for _, name := range toolOrder {
+		if _, ok := tools[name]; ok && !seen[name] {
+			names = append(names, name)
+			seen[name] = true
+		}
+	}
+	var remaining []string
+	for name := range tools {
+		if !seen[name] {
+			remaining = append(remaining, name)
+		}
+	}
+	sort.Strings(remaining)
+	names = append(names, remaining...)
+	for _, name := range names {
+		tool := tools[name]
 		if choice.Type == "tool" && choice.ToolName != "" && choice.ToolName != name {
 			continue
 		}
@@ -672,18 +732,23 @@ func toResponseMessages(content []Part, toolResults []ToolResultPart) []Message 
 	assistantContent := []Part{}
 	for _, part := range content {
 		switch p := part.(type) {
-		case TextPart, ReasoningPart, ReasoningFilePart, FilePart, ToolCallPart:
+		case TextPart, ReasoningPart, ReasoningFilePart, FilePart, ToolCallPart, ToolApprovalRequestPart:
 			assistantContent = append(assistantContent, p)
 		}
 	}
 	if len(assistantContent) > 0 {
 		messages = append(messages, Message{Role: RoleAssistant, Content: assistantContent})
 	}
-	if len(toolResults) > 0 {
-		parts := make([]Part, len(toolResults))
-		for i := range toolResults {
-			parts[i] = toolResults[i]
+	var parts []Part
+	for _, part := range content {
+		if response, ok := part.(ToolApprovalResponsePart); ok {
+			parts = append(parts, response)
 		}
+	}
+	for i := range toolResults {
+		parts = append(parts, toolResults[i])
+	}
+	if len(parts) > 0 {
 		messages = append(messages, Message{Role: RoleTool, Content: parts})
 	}
 	return messages

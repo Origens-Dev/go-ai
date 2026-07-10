@@ -122,6 +122,23 @@ func TestWriteUIMessageStreamResponseTreatsErrorTextChunkAsTerminal(t *testing.T
 	}
 }
 
+func TestUIMessageStreamRedactsErrorsByDefault(t *testing.T) {
+	chunk, ok := ToUIMessageChunk(StreamPart{Type: "error", Err: errors.New("secret database hostname")})
+	if !ok || chunk.ErrorText != "An error occurred." {
+		t.Fatalf("expected redacted error, got %#v", chunk)
+	}
+	chunk, ok = ToUIMessageChunk(StreamPart{Type: "tool-error", ToolCallID: "call-1", Err: errors.New("provider request body")})
+	if !ok || chunk.ErrorText != "An error occurred." {
+		t.Fatalf("expected redacted tool error, got %#v", chunk)
+	}
+	chunk, ok = ToUIMessageChunk(StreamPart{Type: "error", Err: errors.New("safe")}, ToUIMessageChunkOptions{
+		OnError: func(err error) string { return "custom: " + err.Error() },
+	})
+	if !ok || chunk.ErrorText != "custom: safe" {
+		t.Fatalf("expected custom error handler, got %#v", chunk)
+	}
+}
+
 func TestUIMessageChunkHelpers(t *testing.T) {
 	if !IsStartUIMessageChunk(StartUIMessageChunk("message-1")) {
 		t.Fatalf("expected start chunk")

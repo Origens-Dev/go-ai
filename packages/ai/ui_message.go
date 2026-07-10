@@ -44,6 +44,7 @@ type UIPart struct {
 	Preliminary      bool   `json:"preliminary,omitempty"`
 	Approval         *struct {
 		ID          string `json:"id"`
+		Signature   string `json:"signature,omitempty"`
 		Approved    *bool  `json:"approved,omitempty"`
 		Reason      string `json:"reason,omitempty"`
 		IsAutomatic bool   `json:"isAutomatic,omitempty"`
@@ -230,10 +231,38 @@ func AppendResponseMessages(messages []UIMessage, responseMessages []Message) []
 				})
 				continue
 			}
+			applyToolApprovalResponsesToUIMessage(&out[len(out)-1], message.Content)
 			applyToolResultsToUIMessage(&out[len(out)-1], message.Content)
 		}
 	}
 	return out
+}
+
+func applyToolApprovalResponsesToUIMessage(message *UIMessage, parts []Part) {
+	requests := map[string]string{}
+	for _, part := range message.Parts {
+		if IsToolUIPart(part) && part.Approval != nil {
+			requests[part.Approval.ID] = part.ToolCallID
+		}
+	}
+	for _, part := range parts {
+		response, ok := part.(ToolApprovalResponsePart)
+		if !ok {
+			continue
+		}
+		toolCallID := requests[response.ApprovalID]
+		for i := range message.Parts {
+			uiPart := &message.Parts[i]
+			if uiPart.ToolCallID != toolCallID || uiPart.Approval == nil {
+				continue
+			}
+			approved := response.Approved
+			uiPart.State = "approval-responded"
+			uiPart.Approval.Approved = &approved
+			uiPart.Approval.Reason = response.Reason
+			break
+		}
+	}
 }
 
 func validateUIPart(part UIPart) error {
@@ -338,6 +367,12 @@ func convertAssistantUIMessage(message UIMessage, opts ConvertToModelMessagesOpt
 				}
 				if part.State != "input-streaming" {
 					content = append(content, toolCallUIPartToModelPart(part))
+					if part.Approval != nil {
+						content = append(content, ToolApprovalRequestPart{
+							ApprovalID: part.Approval.ID, ToolCallID: part.ToolCallID,
+							Signature: part.Approval.Signature, IsAutomatic: part.Approval.IsAutomatic,
+						})
+					}
 					if part.ProviderExecuted && (part.State == "output-available" || part.State == "output-error") {
 						result, err := toolResultUIPartToModelPart(part, opts, true)
 						if err != nil {
@@ -396,6 +431,13 @@ func convertAssistantUIMessage(message UIMessage, opts ConvertToModelMessagesOpt
 func toolResultContentFromUIParts(parts []UIPart, opts ConvertToModelMessagesOptions) ([]Part, error) {
 	content := make([]Part, 0, len(parts))
 	for _, part := range parts {
+		if part.Approval != nil && part.Approval.Approved != nil && part.State == "approval-responded" {
+			content = append(content, ToolApprovalResponsePart{
+				ApprovalID: part.Approval.ID, Approved: *part.Approval.Approved,
+				Reason: part.Approval.Reason, ProviderExecuted: part.ProviderExecuted,
+				ProviderOptions: ProviderOptions(part.CallProviderMetadata), ProviderMetadata: part.CallProviderMetadata,
+			})
+		}
 		if part.Approval != nil && part.Approval.Approved != nil && !*part.Approval.Approved && part.State == "approval-responded" {
 			content = append(content, ToolResultPart{
 				ToolCallID:       part.ToolCallID,
@@ -535,6 +577,21 @@ func partsToUIParts(parts []Part) []UIPart {
 				partType = "dynamic-tool"
 			}
 			out = append(out, UIPart{Type: partType, ToolName: part.ToolName, ToolCallID: part.ToolCallID, State: "input-available", Input: part.Input, ProviderExecuted: part.ProviderExecuted, Dynamic: part.Dynamic, Title: part.Title, ToolMetadata: part.ToolMetadata, CallProviderMetadata: part.ProviderMetadata})
+		case ToolApprovalRequestPart:
+			for i := len(out) - 1; i >= 0; i-- {
+				if out[i].ToolCallID != part.ToolCallID {
+					continue
+				}
+				out[i].State = "approval-requested"
+				out[i].Approval = &struct {
+					ID          string `json:"id"`
+					Signature   string `json:"signature,omitempty"`
+					Approved    *bool  `json:"approved,omitempty"`
+					Reason      string `json:"reason,omitempty"`
+					IsAutomatic bool   `json:"isAutomatic,omitempty"`
+				}{ID: part.ApprovalID, Signature: part.Signature, IsAutomatic: part.IsAutomatic}
+				break
+			}
 		case ToolResultPart:
 			partType := "tool-" + part.ToolName
 			if part.Dynamic {
