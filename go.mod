@@ -1,4 +1,4 @@
-module github.com/holbrookab/go-ai
+module github.com/Origens-Dev/go-ai
 
 go 1.24
 

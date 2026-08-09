@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/holbrookab/go-ai/packages/ai"
+	"github.com/Origens-Dev/go-ai/packages/ai"
 )
 
 func TestAPIKeyExpressModeAndRequestMapping(t *testing.T) {

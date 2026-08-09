@@ -12,8 +12,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/holbrookab/go-ai/internal/httputil"
-	"github.com/holbrookab/go-ai/packages/ai"
+	"github.com/Origens-Dev/go-ai/internal/httputil"
+	"github.com/Origens-Dev/go-ai/packages/ai"
 )
 
 const defaultBaseURL = "https://openrouter.ai/api/v1"

@@ -164,6 +164,12 @@ type ConvertToModelMessagesOptions struct {
 }
 
 func ConvertToModelMessages(messages []UIMessage, opts ConvertToModelMessagesOptions) ([]Message, error) {
+	if opts.IgnoreIncompleteToolCalls {
+		messages = filterIncompleteToolUIParts(messages)
+		if len(messages) == 0 {
+			return nil, nil
+		}
+	}
 	if err := ValidateUIMessages(messages, ValidateUIMessagesOptions{Tools: opts.Tools}); err != nil {
 		return nil, err
 	}
@@ -251,7 +257,7 @@ func applyToolApprovalResponsesToUIMessage(message *UIMessage, parts []Part) {
 			continue
 		}
 		toolCallID := requests[response.ApprovalID]
-		for i := range message.Parts {
+		for i := len(message.Parts) - 1; i >= 0; i-- {
 			uiPart := &message.Parts[i]
 			if uiPart.ToolCallID != toolCallID || uiPart.Approval == nil {
 				continue
@@ -610,7 +616,7 @@ func applyToolResultsToUIMessage(message *UIMessage, parts []Part) {
 			continue
 		}
 		found := false
-		for i := range message.Parts {
+		for i := len(message.Parts) - 1; i >= 0; i-- {
 			if message.Parts[i].ToolCallID != result.ToolCallID {
 				continue
 			}
@@ -683,7 +689,10 @@ func validateUIPartWithSchemas(messageIndex, partIndex int, part UIPart, opts Va
 				toolName,
 			)
 		}
-		shouldValidateInput := part.State == "input-available" || part.State == "output-available"
+		// Terminal tool calls can retain invalid or incomplete input. Revalidating
+		// it on replay would block follow-up messages after a tool has already
+		// produced a terminal result.
+		shouldValidateInput := part.State == "input-available"
 		if shouldValidateInput {
 			if err := validateUIToolInput(tool, part.Input); err != nil {
 				return invalidUIMessagef(
@@ -710,6 +719,33 @@ func validateUIPartWithSchemas(messageIndex, partIndex int, part UIPart, opts Va
 		}
 	}
 	return nil
+}
+
+func filterIncompleteToolUIParts(messages []UIMessage) []UIMessage {
+	out := make([]UIMessage, 0, len(messages))
+	for _, message := range messages {
+		filtered := message
+		filtered.Parts = make([]UIPart, 0, len(message.Parts))
+		for _, part := range message.Parts {
+			if IsToolUIPart(part) && !isCompleteToolUIState(part.State) {
+				continue
+			}
+			filtered.Parts = append(filtered.Parts, part)
+		}
+		if len(filtered.Parts) > 0 {
+			out = append(out, filtered)
+		}
+	}
+	return out
+}
+
+func isCompleteToolUIState(state string) bool {
+	switch state {
+	case "approval-responded", "output-available", "output-error", "output-denied":
+		return true
+	default:
+		return false
+	}
 }
 
 func validateUIToolInput(tool Tool, input any) error {

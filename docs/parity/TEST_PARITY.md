@@ -2,7 +2,9 @@
 
 This file tracks test parity for upstream capabilities that have a Go implementation in this repo. It does not count TypeScript-only type tests, React/browser transports, Node stream helpers with no Go API, or provider families that have not been ported.
 
-Upstream reference: Vercel AI SDK `main` at `58d77caf6733f49431b0864bd71adbe143958aeb` (`ai@7.0.20`).
+Upstream reference: Vercel AI SDK `ai@7.0.58` at
+`63db19387ba71ec50820d146658ae720ab50c80b`, compared from `ai@7.0.20` for the
+bounded agent/tool/approval/stream/server-UI scope.
 
 ## Coverage Summary
 
@@ -10,7 +12,7 @@ The earlier numeric file-count snapshot was tied to canary.152 and is no longer 
 
 | Area | Current gate |
 | --- | --- |
-| `packages/ai` P0/P1 core/runtime | Signed approvals, error redaction, SSRF regressions, deterministic tools, drift fingerprints, lifecycle aliases, empty streams, and streaming JSON extraction |
+| `packages/ai` P0/P1 core/runtime | Signed approvals and collision resistance, legacy approval verification, cancellation fencing, error redaction, SSRF regressions, deterministic tools, drift fingerprints, lifecycle aliases, semantic stream timeouts, metadata-only deltas, empty streams, streaming JSON extraction, and persisted UI-tool replay |
 | Existing provider packages | Existing Bedrock, Vertex, Anthropic, and community OpenRouter suites remain required |
 
 ## Scope Rules
@@ -47,4 +49,5 @@ Verification command:
 
 ```sh
 GOCACHE=/private/tmp/go-ai-build-cache go test ./...
+go test -race ./packages/ai
 ```

@@ -2,7 +2,7 @@
 
 This is the active work board for outstanding parity items. It intentionally excludes completed work and broad inventory. For the full snapshot, see `AUDIT.md`.
 
-Baseline: `ai@7.0.20`, upstream commit `58d77caf6733f49431b0864bd71adbe143958aeb`.
+Baseline: `ai@7.0.58`, upstream commit `63db19387ba71ec50820d146658ae720ab50c80b`.
 
 ## Implemented In Current Worktree
 
@@ -16,6 +16,10 @@ Baseline: `ai@7.0.20`, upstream commit `58d77caf6733f49431b0864bd71adbe143958aeb
 - Bedrock replay updates for signed reasoning, cache-point preservation, and file tool-result content.
 - Canary.159 core stream helper parity: standalone text/UI stream conversion, `OnEnd` callback aliasing, stream abort telemetry, optional sandbox spawning, output chunk timing metrics, and `output-error` UI replay validation.
 - AI SDK 7.0.20 P0/P1 parity: client-safe UI error defaults, expanded SSRF guards, signed approval replay, deterministic tool ordering, tool-definition fingerprints/drift detection, stable lifecycle callbacks, empty-stream rejection, and streamed JSON extraction.
+- Bounded AI SDK 7.0.58 core parity: injective approval signatures with safe
+  legacy verification, cancellation fencing, semantic stream timeouts,
+  metadata-only delta preservation, repeated tool-call ID handling, terminal
+  tool-input replay tolerance, and stricter incomplete UI-tool filtering.
 - Scoped test parity is complete for ported upstream/community capabilities; see `TEST_PARITY.md`.
 
 ## Queue
@@ -34,6 +38,8 @@ Baseline: `ai@7.0.20`, upstream commit `58d77caf6733f49431b0864bd71adbe143958aeb
 | P2 | `text-stream` / HTTP | fixture-needed | Broaden HTTP response fixture coverage. | Tests cover headers, status text, flush behavior, error propagation, context cancellation, text stream, data stream, completion stream, and UI stream interop. |
 | P2 | `transcribe` | feature | Add streaming transcription through an optional Go streaming model interface. | Delta/partial/final transcript parts, cancellation, raw chunks, metadata, and unsupported-model behavior have tests. |
 | P2 | `generate-video` | feature | Add batching, frame images, image/video references, audio generation, and URL download normalization. | Provider call options and aggregation match applicable AI SDK 7 behavior. |
+| P2 | `generate-text` / tools | behavior | Evaluate experimental tool callers/code-mode routing and tool input lifecycle callbacks from `ai@7.0.58`. | A Go-native caller boundary and callback ordering are designed without broadening provider packages, with focused tests. |
+| P2 | `prepare-step` / middleware | behavior | Evaluate per-step language-model call-setting overrides and default-instructions middleware from `ai@7.0.58`. | The Go API has an explicit override/precedence contract and regression tests. |
 | P3 | realtime | n/a-go | Keep browser sessions out of scope; evaluate provider/factory contracts and server token/tool helpers separately. | The browser-only boundary and any Go-native experimental subset are documented. |
 | P3 | browser transports/hooks | n/a-go | Keep React/browser hooks and browser transports documented as intentionally absent. | `useChat`, `useCompletion`, browser `DefaultChatTransport`, and direct browser fetch helpers are listed as `n/a-go` with server helper replacements named. |
 

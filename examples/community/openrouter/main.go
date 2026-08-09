@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/holbrookab/go-ai/packages/ai"
-	"github.com/holbrookab/go-ai/packages/community/openrouter"
+	"github.com/Origens-Dev/go-ai/packages/ai"
+	"github.com/Origens-Dev/go-ai/packages/community/openrouter"
 )
 
 func main() {

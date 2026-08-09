@@ -431,6 +431,84 @@ func TestConvertToModelMessagesCanIgnoreIncompleteToolCalls(t *testing.T) {
 	}
 }
 
+func TestConvertToModelMessagesIgnoresPendingApprovalAndMissingState(t *testing.T) {
+	got, err := ConvertToModelMessages([]UIMessage{{
+		ID:   "assistant",
+		Role: RoleAssistant,
+		Parts: []UIPart{
+			{Type: "text", Text: "still useful"},
+			{Type: "tool-weather", ToolCallID: "call-approval", State: "approval-requested", Approval: &struct {
+				ID          string `json:"id"`
+				Signature   string `json:"signature,omitempty"`
+				Approved    *bool  `json:"approved,omitempty"`
+				Reason      string `json:"reason,omitempty"`
+				IsAutomatic bool   `json:"isAutomatic,omitempty"`
+			}{ID: "approval-1"}},
+			{Type: "tool-weather", ToolCallID: "call-stateless"},
+		},
+	}}, ConvertToModelMessagesOptions{IgnoreIncompleteToolCalls: true})
+	if err != nil {
+		t.Fatalf("ConvertToModelMessages failed: %v", err)
+	}
+	if len(got) != 1 || len(got[0].Content) != 1 {
+		t.Fatalf("unexpected converted messages: %#v", got)
+	}
+	if text, ok := got[0].Content[0].(TextPart); !ok || text.Text != "still useful" {
+		t.Fatalf("unexpected retained content: %#v", got[0].Content)
+	}
+}
+
+func TestValidateUIMessagesDoesNotRevalidateTerminalToolInput(t *testing.T) {
+	messages := []UIMessage{{
+		ID:   "assistant",
+		Role: RoleAssistant,
+		Parts: []UIPart{{
+			Type:       "tool-weather",
+			ToolCallID: "call-1",
+			State:      "output-available",
+			Input:      map[string]any{},
+			Output:     map[string]any{"forecast": "sunny"},
+		}},
+	}}
+	err := ValidateUIMessages(messages, ValidateUIMessagesOptions{Tools: map[string]Tool{
+		"weather": {
+			InputSchema: map[string]any{
+				"type": "object", "required": []any{"city"},
+				"properties": map[string]any{"city": map[string]any{"type": "string"}},
+			},
+			OutputSchema: map[string]any{
+				"type": "object", "required": []any{"forecast"},
+				"properties": map[string]any{"forecast": map[string]any{"type": "string"}},
+			},
+		},
+	}})
+	if err != nil {
+		t.Fatalf("terminal tool input was revalidated: %v", err)
+	}
+}
+
+func TestAppendResponseMessagesUpdatesLatestRepeatedToolCallID(t *testing.T) {
+	messages := []UIMessage{{
+		ID:   "assistant",
+		Role: RoleAssistant,
+		Parts: []UIPart{
+			{Type: "tool-weather", ToolCallID: "call-1", State: "output-available", Output: "first"},
+			{Type: "step-start"},
+			{Type: "tool-weather", ToolCallID: "call-1", State: "input-available"},
+		},
+	}}
+	got := AppendResponseMessages(messages, []Message{ToolMessage(ToolResultPart{
+		ToolCallID: "call-1", ToolName: "weather", Result: "second",
+		Output: ToolResultOutput{Type: "text", Value: "second"},
+	})})
+	if got[0].Parts[0].Output != "first" {
+		t.Fatalf("earlier tool part was overwritten: %#v", got[0].Parts)
+	}
+	if got[0].Parts[2].Output != "second" || got[0].Parts[2].State != "output-available" {
+		t.Fatalf("latest tool part was not updated: %#v", got[0].Parts)
+	}
+}
+
 func TestAppendResponseMessagesAppliesToolResults(t *testing.T) {
 	messages := []UIMessage{{
 		ID:   "assistant",

@@ -2,7 +2,11 @@ package ai
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
 	"errors"
+	"fmt"
 	"reflect"
 	"testing"
 )
@@ -104,6 +108,46 @@ func TestHashCanonicalAndToolApprovalSignature(t *testing.T) {
 	valid, err = VerifyToolApprovalSignature(secret, signature, "approval-1", "call-1", "transfer", map[string]any{"account": "attacker", "amount": 10.0})
 	if err != nil || valid {
 		t.Fatalf("tampered input verified: %v %v", valid, err)
+	}
+}
+
+func TestToolApprovalSignaturePayloadIsInjective(t *testing.T) {
+	secret := []byte("approval secret")
+	input := map[string]any{"path": "/tmp/target"}
+	signature, err := SignToolApproval(secret, "approval-1", "call-1", "search\ndelete", input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	valid, err := VerifyToolApprovalSignature(secret, signature, "approval-1", "call-1\nsearch", "delete", input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if valid {
+		t.Fatal("signature verified after fields were retupled across a newline boundary")
+	}
+}
+
+func TestToolApprovalSignatureVerifiesSafeLegacyPayload(t *testing.T) {
+	secret := []byte("approval secret")
+	input := map[string]any{"path": "/tmp/target"}
+	inputDigest, err := HashCanonical(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mac := hmac.New(sha256.New, secret)
+	_, _ = fmt.Fprintf(mac, "%s\n%s\n%s\n%s", "approval-1", "call-1", "delete", inputDigest)
+	legacySignature := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+
+	valid, err := VerifyToolApprovalSignature(secret, legacySignature, "approval-1", "call-1", "delete", input)
+	if err != nil || !valid {
+		t.Fatalf("safe legacy signature did not verify: valid=%v err=%v", valid, err)
+	}
+	valid, err = VerifyToolApprovalSignature(secret, legacySignature, "approval-1", "call-1\nsearch", "delete", input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if valid {
+		t.Fatal("legacy fallback accepted a newline-bearing field")
 	}
 }
 

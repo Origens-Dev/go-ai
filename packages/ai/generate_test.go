@@ -15,6 +15,23 @@ func TestGenerateTextRequiresPromptOrMessages(t *testing.T) {
 	}
 }
 
+func TestGenerateTextDoesNotReturnProviderResultAfterCancellation(t *testing.T) {
+	model := NewMockLanguageModel("cancelled-model")
+	model.GenerateFunc = func(ctx context.Context, _ LanguageModelCallOptions) (*LanguageModelGenerateResult, error) {
+		<-ctx.Done()
+		return &LanguageModelGenerateResult{
+			Content:      []Part{TextPart{Text: "partial"}},
+			FinishReason: FinishReason{Unified: FinishStop},
+		}, nil
+	}
+	_, err := GenerateText(context.Background(), GenerateTextOptions{
+		Model: model, Prompt: "hello", Timeout: TimeoutConfig{Step: 10 * time.Millisecond},
+	})
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("expected deadline error, got %T %v", err, err)
+	}
+}
+
 func TestGenerateTextRejectsSystemInMessagesByDefault(t *testing.T) {
 	_, err := GenerateText(context.Background(), GenerateTextOptions{
 		Model:    mockModel{},

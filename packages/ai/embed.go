@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/holbrookab/go-ai/internal/retry"
+	"github.com/Origens-Dev/go-ai/internal/retry"
 )
 
 func Embed(ctx context.Context, opts EmbedOptions) (embedResult *EmbedResult, err error) {

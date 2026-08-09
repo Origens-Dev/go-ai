@@ -1,0 +1,10 @@
+go-ai
+Copyright 2026 Origens Dev and go-ai contributors
+
+This Origens-maintained lineage is based on github.com/holbrookab/go-ai
+v0.3.0, commit f332bd84f1dd40bdc7882517e82b2ad7dafeff83.
+
+The baseline project is Copyright 2026 Andrew Holbrook and go-ai
+contributors. Portions are derived from Vercel AI SDK, Copyright 2023
+Vercel, Inc. The Apache License 2.0 and those attributions are preserved in
+LICENSE.

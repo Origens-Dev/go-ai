@@ -16,11 +16,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Origens-Dev/go-ai/internal/httputil"
+	"github.com/Origens-Dev/go-ai/packages/ai"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream"
 	awsv4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
-	"github.com/holbrookab/go-ai/internal/httputil"
-	"github.com/holbrookab/go-ai/packages/ai"
 )
 
 type Credentials struct {

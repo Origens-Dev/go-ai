@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.1.0-alpha.1 - 2026-08-09
+
+- Established the Origens-maintained module at `github.com/Origens-Dev/go-ai`,
+  based on `github.com/holbrookab/go-ai` `v0.3.0`
+  (`f332bd84f1dd40bdc7882517e82b2ad7dafeff83`).
+- Refreshed the bounded core parity baseline from Vercel AI SDK `ai@7.0.20` to
+  `ai@7.0.58` for agent, tool/approval, stream, and server-side UI behaviors.
+- Hardened approval HMAC payloads against field-boundary collisions while
+  retaining safe verification of pending legacy signatures.
+- Added semantic first-content and inter-content stream timeouts, preserved
+  metadata-only text deltas, and tightened persisted UI-tool replay behavior.
+- Added Go 1.24 pull-request CI and a manual, validated `v0.1.x` release path.
+
+The entries below are the changelog inherited from the
+`github.com/holbrookab/go-ai` baseline.
+
 ## 0.3.0 - 2026-07-10
 
 - Hardened UI message streams so server errors are redacted by default while explicit error handlers can opt into client-safe detail.

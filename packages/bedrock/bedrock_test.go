@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Origens-Dev/go-ai/packages/ai"
 	"github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream"
-	"github.com/holbrookab/go-ai/packages/ai"
 )
 
 func TestDoGenerateUsesAPIKeyAndMapsRequest(t *testing.T) {

@@ -2,9 +2,10 @@
 
 This is the broad audit snapshot for the Go port. It is reference material, not the active backlog. Active work belongs in `PARITY.md`.
 
-Baseline: `ai@7.0.20`, upstream commit `58d77caf6733f49431b0864bd71adbe143958aeb`.
+Baseline: `ai@7.0.58`, upstream commit `63db19387ba71ec50820d146658ae720ab50c80b`.
 
-The local `/Users/dholbrook/src/ai` checkout was refreshed to `58d77caf6733f49431b0864bd71adbe143958aeb` before the current parity pass.
+The local `/Users/dholbrook/src/ai` checkout was compared from the fetched
+`ai@7.0.20` tag through the fetched `ai@7.0.58` tag for the bounded core scope.
 
 ## Current Go Surface
 
@@ -13,8 +14,11 @@ The Go package currently contains:
 - Prompt/message normalization for system/user/assistant/tool messages.
 - Content parts for text, files, reasoning, reasoning files, tool calls, tool results, and sources.
 - `GenerateText` with multi-step tool loops, accumulated AI SDK 7 result fields, `FinalStep`, `ResponseMessages`, stop conditions, tool choice filtering, active-tool filtering, provider-executed tool result tracking, input validation/refinement, tool-call repair, approval denial/user-approval outputs, retries, request timeouts, provider options, include controls, usage aggregation, callbacks, response metadata, custom download hooks, sandbox propagation, performance fields, and text/json/object/array/choice output strategies.
-- Signed tool-approval requests and replay validation, deterministic tool ordering, canonical tool fingerprints/drift detection, redacted UI-stream error defaults, and expanded SSRF protections.
-- `StreamText` with provider stream consumption, accumulated AI SDK 7 result fields, step accumulation, stream transforms, smooth streaming, streamed partial output parsing, array element events, abort/raw-chunk events, streamed tool execution, streamed tool-call repair, and follow-up tool-loop steps.
+- Signed tool-approval requests and replay validation, injective approval HMAC
+  payloads with safe legacy verification, deterministic tool ordering,
+  canonical tool fingerprints/drift detection, redacted UI-stream error
+  defaults, and expanded SSRF protections.
+- `StreamText` with provider stream consumption, accumulated AI SDK 7 result fields, step accumulation, semantic first-content/inter-content timeouts, metadata-only text-delta preservation, stream transforms, smooth streaming, streamed partial output parsing, array element events, abort/raw-chunk events, streamed tool execution, streamed tool-call repair, and follow-up tool-loop steps.
 - Lifecycle callbacks and telemetry hooks for text, stream text, object generation, embeddings, media, uploads, and model calls.
 - `GenerateObject` / `StreamObject` with JSON response-format steering, object/array/enum/no-schema modes, array output wrapping/unwrapping, JSON instruction helper, repair hook, best-effort schema validation, typed no-object errors, repaired partial object streaming, and Go-native array element streaming.
 - `Embed` / `EmbedMany`, `Rerank`, `GenerateImage`, `GenerateVideo`, `GenerateSpeech`, `Transcribe`, `UploadFile`, and `UploadSkill` core delegation APIs.
@@ -31,7 +35,7 @@ The Go package currently contains:
 | `index.ts`, `global.ts`, top-level re-exports | partial | Single Go package exports core types/functions directly. Gateway/global/browser setup remains a Go-native documentation item. |
 | `types` | partial | Model/provider contracts, usage, warnings, metadata, response formats, request/response metadata, JSON value/schema aliases, and file data contracts exist. Warning taxonomy and provider-utils shims need fixture hardening. |
 | `prompt` | partial | Prompt standardization, message roles, stricter tool-call/tool-result validation, tool-result ordering, file normalization/download, active/named tool validation, tool context propagation, and primary `Instructions` support exist. Flexible tool descriptions and broader prompt fixture coverage remain. |
-| `generate-text` | partial | Text generation/streaming, accumulated multi-step result fields, `FinalStep`, `ResponseMessages`, include controls, prepare-step carry-forward, input refinement, tool metadata fields, sandbox propagation, transforms, smooth streaming, output strategies, partial output, element events, abort/raw chunks, callbacks, telemetry hooks, performance fields, and repair paths exist. Remaining gaps are mostly fixture depth, deterministic performance tests, UI metadata propagation, and file URL download behavior for tool-result files. |
+| `generate-text` | partial | Text generation/streaming, cancellation fencing after provider calls, accumulated multi-step result fields, `FinalStep`, `ResponseMessages`, include controls, prepare-step carry-forward, input refinement, tool metadata fields, sandbox propagation, transforms, semantic stream timeouts, smooth streaming, output strategies, partial output, element events, abort/raw chunks, callbacks, telemetry hooks, performance fields, and repair paths exist. Remaining gaps include experimental tool callers, broader per-step call-setting overrides, tool-input lifecycle callbacks, fixture depth, deterministic performance tests, and file URL download behavior for tool-result files. |
 | `generate-object` | partial | Object/array/enum/no-schema modes, stream object, partial object, element streams, repair, and best-effort schema validation exist. Full JSON Schema parity remains intentionally incremental. |
 | `error` | partial | Named SDK errors and guards exist. Exact upstream message/marker fixture coverage remains outstanding. |
 | `util` | partial | Partial JSON, cosine similarity, deep equality, hashing, media/data URL normalization, SSRF-aware download, header/default merging, deep merge, retry/backoff, reader consumption, serial executor, stitchable streams, and HTTP helpers exist. Callback/signal composition and stream simulation helpers remain. |
@@ -51,8 +55,8 @@ The Go package currently contains:
 | `upload-skill` | done | Skills API/provider contract and upload delegation exist. |
 | `text-stream` | partial | Go HTTP response helpers exist. Broader fixture coverage remains. |
 | `ui-message-stream` | partial | UI chunks, validation, response IDs, context-aware write/merge, finish callbacks, SSE/JSONL responses, terminal error chunks, and stream consumption hooks exist. Exact validation text, optional-input tool part fixtures, tool metadata propagation, and current input-streaming/output-error cases remain. |
-| `ui` | partial | UI message validation/conversion/processing, static/dynamic tool schemas, data/metadata schemas, server chat/completion helpers, approval reconciliation, and resume callback handling exist. Broader fixtures remain, especially persisted errored tool calls where `input` is absent after JSON serialization. |
-| `agent` | partial | `ToolLoopAgent`, default step limit, prepare-call hook, active-tool filtering, callbacks, output/download/transform forwarding, primary `Instructions`, include forwarding, input refinement, sandbox forwarding, and UI bridge exist. Settings-level `AllowSystemInMessages` and broader runtime context/telemetry parity remain. |
+| `ui` | partial | UI message validation/conversion/processing, static/dynamic tool schemas, data/metadata schemas, server chat/completion helpers, approval reconciliation, terminal-state input replay tolerance, repeated tool-call ID handling, stricter incomplete-tool filtering, and resume callback handling exist. Browser chat request-overlap/regeneration state remains `n/a-go`; broader server-side fixtures remain. |
+| `agent` | partial | `ToolLoopAgent`, default step limit, prepare-call hook, active-tool filtering, settings/call timeout forwarding, callbacks, output/download/transform forwarding, primary `Instructions`, include forwarding, input refinement, sandbox forwarding, and UI bridge exist. Settings-level `AllowSystemInMessages`, experimental tool callers, and broader runtime context/telemetry parity remain. |
 | `providers/anthropic` | partial | First-class Anthropic Messages provider exists for generate/stream, auth, custom HTTP client, message conversion, tools, reasoning, file/document inputs, provider options, beta headers, and error responses. Native server-tool helper APIs and sandbox-backed tools remain feature backlog. |
 | `packages/community/openrouter` | partial | Community OpenRouter connector exists for chat generation/streaming, embeddings, provider option passthrough, session IDs, app attribution headers, streaming tool deltas, tool calls, reasoning details, and usage metadata. Fixture coverage for routing/debug/cost shapes and Anthropic-routed cache behavior remains. |
 | `test` | done | Mock provider and model helpers exist; Go tests use `httptest` and package HTTP helpers. |
@@ -65,7 +69,22 @@ The Go package currently contains:
 - Add named error types before features depend on them.
 - Keep the active backlog in `PARITY.md` focused on unfinished work only.
 
-## AI SDK 7.0.20 Delta Summary
+## AI SDK 7.0.58 Bounded Delta Summary
+
+- Approval HMACs use a versioned, injective payload so delimiter-bearing tool
+  fields cannot be retupled; safe pending `v0.3.0` signatures still verify.
+- Non-streaming generation rejects provider results returned after the step
+  context has already been cancelled.
+- Streaming supports per-step first-content and inter-content timeouts that are
+  reset only by semantic output, and preserves provider metadata carried on an
+  empty text delta.
+- UI conversion drops awaiting/stateless tool calls when incomplete calls are
+  ignored, does not revalidate terminal tool input, and updates the newest tool
+  part when a tool-call ID repeats across steps.
+- The existing Go agent already forwarded settings-level timeouts correctly;
+  regression coverage now locks that behavior.
+
+## Inherited AI SDK 7.0.20 Delta Summary
 
 - `generateText` / `streamText` changed result semantics: top-level content/files/sources/tool calls/tool results are accumulated across steps, `usage` is total usage, `totalUsage` is deprecated, and `finalStep` is the last-step shortcut.
 - `StepResult` gained request messages and performance metrics; request/response bodies are now controlled by stable include settings to reduce memory for large file/image payloads.

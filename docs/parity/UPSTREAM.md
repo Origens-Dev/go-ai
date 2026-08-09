@@ -4,28 +4,34 @@ This repo tracks Vercel AI SDK `main` as the upstream behavioral reference.
 
 | Field | Value |
 | --- | --- |
-| Upstream checkout | Local `/Users/dholbrook/src/ai` refreshed from GitHub `vercel/ai` `main` |
-| Upstream package version | `ai@7.0.20` |
-| Upstream commit | `58d77caf6733f49431b0864bd71adbe143958aeb` |
-| Upstream working tree | Local checkout, clean after fast-forward |
-| Checked on | 2026-07-10 |
-| Go module | `github.com/holbrookab/go-ai` |
+| Upstream checkout | Local `/Users/dholbrook/src/ai` with the GitHub `vercel/ai` release tag fetched |
+| Upstream package version | `ai@7.0.58` |
+| Upstream commit | `63db19387ba71ec50820d146658ae720ab50c80b` |
+| Compared range | `ai@7.0.20..ai@7.0.58` |
+| Checked on | 2026-08-09 |
+| Go module | `github.com/Origens-Dev/go-ai` |
+| Downstream baseline | `github.com/holbrookab/go-ai` `v0.3.0` (`f332bd84f1dd40bdc7882517e82b2ad7dafeff83`) |
 
 ## Compared Scope
 
 Primary scope:
 
-- `packages/ai/src` at `vercel/ai@58d77caf6733f49431b0864bd71adbe143958aeb`
-- `packages/amazon-bedrock`
-- `packages/anthropic`
-- `packages/google-vertex`
-- shared provider/provider-utils behavior as needed by the Go public surface
+- `packages/ai/src` from `ai@7.0.20` through `ai@7.0.58`, bounded to
+  agent, tool/approval, stream, and server-side UI behavior
+- shared provider/provider-utils types only where needed to understand those
+  existing core behaviors
 
 Community-provider comparison scope:
 
 - OpenRouter's community AI SDK provider repository, used as the behavioral reference for `packages/community/openrouter`
 
-The high-signal delta since canary.159 includes signed approval replay, client-error redaction, download SSRF hardening, deterministic tool ordering, tool-definition drift detection, stable lifecycle callbacks, empty-stream rejection, streaming JSON extraction, streaming transcription, expanded video inputs, and experimental realtime APIs. The P0/P1 server-side core items are ported; streaming transcription, expanded video generation, and browser-oriented realtime work remain outside this baseline update.
+The high-signal bounded delta includes injective approval signatures, approval
+denial replay fixes, cancellation correctness, settings-level agent timeout
+forwarding, semantic first/inter-chunk streaming timeouts, metadata-only text
+delta preservation, repeated tool-call ID handling, and persisted UI-tool replay
+fixes. Experimental tool callers/code mode, batch and translation APIs, expanded
+video/transcription, realtime, and browser chat state management remain outside
+this update.
 
 Current Go implementation scope:
 
@@ -51,3 +57,4 @@ Current Go implementation scope:
 - TypeScript compile-time inference tests are replaced by Go compile/runtime tests and examples.
 - React, RSC, browser transports, and hooks are not runtime Go packages. Server-side HTTP helpers and UI stream primitives are the Go replacement surface.
 - Node/Web stream helpers map to Go channels, `io.Reader`, `http.Response`, and `http.ResponseWriter` helpers.
+- Provider package deltas were not audited or expanded in this bounded core pass.

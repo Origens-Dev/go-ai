@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 
-	"github.com/holbrookab/go-ai/internal/retry"
+	"github.com/Origens-Dev/go-ai/internal/retry"
 )
 
 const (

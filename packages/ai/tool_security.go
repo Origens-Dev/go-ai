@@ -85,8 +85,12 @@ func SignToolApproval(secret []byte, approvalID, toolCallID, toolName string, in
 	if err != nil {
 		return "", err
 	}
+	payload, err := toolApprovalPayload(approvalID, toolCallID, toolName, inputDigest)
+	if err != nil {
+		return "", err
+	}
 	mac := hmac.New(sha256.New, secret)
-	_, _ = fmt.Fprintf(mac, "%s\n%s\n%s\n%s", approvalID, toolCallID, toolName, inputDigest)
+	_, _ = mac.Write(payload)
 	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil)), nil
 }
 
@@ -100,7 +104,39 @@ func VerifyToolApprovalSignature(secret []byte, signature, approvalID, toolCallI
 		return false, nil
 	}
 	want, _ := base64.RawURLEncoding.DecodeString(expected)
-	return hmac.Equal(actual, want), nil
+	if hmac.Equal(actual, want) {
+		return true, nil
+	}
+
+	// Signatures issued before the injective payload format remain valid for
+	// pending approvals only when every formerly delimited field is newline-free.
+	// Refusing the fallback otherwise keeps the field-retupling attack closed.
+	if bytes.ContainsRune([]byte(approvalID), '\n') ||
+		bytes.ContainsRune([]byte(toolCallID), '\n') ||
+		bytes.ContainsRune([]byte(toolName), '\n') {
+		return false, nil
+	}
+	inputDigest, err := HashCanonical(input)
+	if err != nil {
+		return false, err
+	}
+	legacy := hmac.New(sha256.New, secret)
+	_, _ = fmt.Fprintf(legacy, "%s\n%s\n%s\n%s", approvalID, toolCallID, toolName, inputDigest)
+	return hmac.Equal(actual, legacy.Sum(nil)), nil
+}
+
+func toolApprovalPayload(approvalID, toolCallID, toolName, inputDigest string) ([]byte, error) {
+	payload, err := CanonicalJSON([]string{
+		"ai-sdk-tool-approval-v1",
+		approvalID,
+		toolCallID,
+		toolName,
+		inputDigest,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return []byte(payload), nil
 }
 
 var approvalIDFallback atomic.Uint64

@@ -594,7 +594,7 @@ func firstFloatPtr(values ...*float64) *float64 {
 
 func firstTimeout(values ...TimeoutConfig) TimeoutConfig {
 	for _, value := range values {
-		if value.Total != 0 || value.Step != 0 || value.Tool != 0 || value.Chunk != 0 {
+		if value.Total != 0 || value.Step != 0 || value.FirstChunk != 0 || value.Chunk != 0 || value.Tool != 0 {
 			return value
 		}
 	}

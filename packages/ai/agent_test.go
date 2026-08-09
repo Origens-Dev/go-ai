@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"reflect"
 	"testing"
+	"time"
 )
 
 func TestToolLoopAgentGenerateUsesSettingsAndDefaults(t *testing.T) {
@@ -61,6 +62,20 @@ func TestToolLoopAgentForwardsToolOrder(t *testing.T) {
 	agent := NewToolLoopAgent(ToolLoopAgentSettings{
 		Model: model, Tools: map[string]Tool{"c": {}, "a": {}, "b": {}}, ToolOrder: []string{"b"},
 	})
+	if _, err := agent.Generate(context.Background(), AgentCallOptions{Prompt: "hello"}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestToolLoopAgentUsesSettingsTimeout(t *testing.T) {
+	model := NewMockLanguageModel("agent-timeout")
+	model.GenerateFunc = func(ctx context.Context, _ LanguageModelCallOptions) (*LanguageModelGenerateResult, error) {
+		if _, ok := ctx.Deadline(); !ok {
+			t.Fatal("settings-level timeout did not reach the model call")
+		}
+		return &LanguageModelGenerateResult{Content: []Part{TextPart{Text: "ok"}}, FinishReason: FinishReason{Unified: FinishStop}}, nil
+	}
+	agent := NewToolLoopAgent(ToolLoopAgentSettings{Model: model, Timeout: TimeoutConfig{Total: time.Second}})
 	if _, err := agent.Generate(context.Background(), AgentCallOptions{Prompt: "hello"}); err != nil {
 		t.Fatal(err)
 	}

@@ -9,7 +9,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/holbrookab/go-ai/packages/ai"
+	"github.com/Origens-Dev/go-ai/packages/ai"
 )
 
 func TestDoGenerateConvertsOpenRouterChat(t *testing.T) {

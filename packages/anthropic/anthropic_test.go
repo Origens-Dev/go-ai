@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/holbrookab/go-ai/packages/ai"
+	"github.com/Origens-Dev/go-ai/packages/ai"
 )
 
 func TestDoGenerateConvertsMessagesAndToolCalls(t *testing.T) {

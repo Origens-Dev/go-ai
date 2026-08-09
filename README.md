@@ -2,6 +2,11 @@
 
 A Go port of Vercel's AI SDK, with the public surface organized under `packages/*` to match the upstream TypeScript repo where that shape makes sense in Go.
 
+This Origens-maintained lineage starts at `v0.1.0-alpha.1`. It is based on
+[`github.com/holbrookab/go-ai`](https://github.com/holbrookab/go-ai) `v0.3.0`
+(`f332bd84f1dd40bdc7882517e82b2ad7dafeff83`) and retains that project's
+Apache-2.0 license, attribution, and history.
+
 - `packages/ai`: generation, streaming, object generation, embeddings, tool loops, agents, UI message streams, middleware, prompt normalization, retries, stop conditions, and shared model/provider contracts.
 - `packages/anthropic`: Anthropic Messages provider.
 - `packages/bedrock`: Amazon Bedrock Converse provider.
@@ -28,8 +33,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/holbrookab/go-ai/packages/ai"
-	"github.com/holbrookab/go-ai/packages/vertex"
+	"github.com/Origens-Dev/go-ai/packages/ai"
+	"github.com/Origens-Dev/go-ai/packages/vertex"
 )
 
 func main() {
@@ -96,4 +101,6 @@ First-class providers live directly under `packages/` and are included in parity
 
 ## License
 
-This project is licensed under Apache-2.0. Portions are derived from Vercel AI SDK; see [LICENSE](LICENSE) for attribution.
+This project is licensed under Apache-2.0. It descends from
+`github.com/holbrookab/go-ai` `v0.3.0`, and portions are derived from Vercel AI
+SDK. See [LICENSE](LICENSE) and [NOTICE](NOTICE) for attribution.

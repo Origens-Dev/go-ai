@@ -95,10 +95,11 @@ type SmoothStreamOptions struct {
 }
 
 type TimeoutConfig struct {
-	Total time.Duration
-	Step  time.Duration
-	Tool  time.Duration
-	Chunk time.Duration
+	Total      time.Duration
+	Step       time.Duration
+	FirstChunk time.Duration
+	Chunk      time.Duration
+	Tool       time.Duration
 }
 
 type IncludeConfig struct {

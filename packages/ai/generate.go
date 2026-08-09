@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/holbrookab/go-ai/internal/retry"
+	"github.com/Origens-Dev/go-ai/internal/retry"
 )
 
 func GenerateText(ctx context.Context, opts GenerateTextOptions) (result *GenerateTextResult, err error) {
@@ -194,6 +194,11 @@ func GenerateText(ctx context.Context, opts GenerateTextOptions) (result *Genera
 			return nil
 		})
 		if err != nil {
+			return nil, err
+		}
+		// A provider can ignore cancellation and still return a partial result.
+		// Do not turn an already-cancelled multi-step call into apparent success.
+		if err := stepCtx.Err(); err != nil {
 			return nil, err
 		}
 		if modelResult == nil {

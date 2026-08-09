@@ -2,6 +2,7 @@ package ai
 
 import (
 	"context"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -85,6 +86,75 @@ func TestStreamTextRejectsEmptyProviderStream(t *testing.T) {
 	}
 	if len(result.Steps) != 0 {
 		t.Fatalf("empty stream created a step: %#v", result.Steps)
+	}
+}
+
+func TestStreamTextFirstChunkTimeout(t *testing.T) {
+	model := &sequenceModel{stream: func(LanguageModelCallOptions) (*LanguageModelStreamResult, error) {
+		return &LanguageModelStreamResult{Stream: make(chan StreamPart)}, nil
+	}}
+	result, err := StreamText(context.Background(), StreamTextOptions{GenerateTextOptions: GenerateTextOptions{
+		Model: model, Prompt: "hello", Timeout: TimeoutConfig{FirstChunk: 20 * time.Millisecond},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range result.Stream {
+	}
+	if !result.Aborted || !strings.Contains(result.AbortReason, "first chunk timeout") {
+		t.Fatalf("expected first chunk timeout, aborted=%v reason=%q", result.Aborted, result.AbortReason)
+	}
+}
+
+func TestStreamTextChunkTimeoutOnlyResetsForSemanticOutput(t *testing.T) {
+	model := &sequenceModel{stream: func(LanguageModelCallOptions) (*LanguageModelStreamResult, error) {
+		stream := make(chan StreamPart, 4)
+		stream <- StreamPart{Type: "text-delta", TextDelta: "hello"}
+		stream <- StreamPart{Type: "response-metadata", Response: ResponseMetadata{ID: "response-1"}}
+		return &LanguageModelStreamResult{Stream: stream}, nil
+	}}
+	result, err := StreamText(context.Background(), StreamTextOptions{GenerateTextOptions: GenerateTextOptions{
+		Model: model, Prompt: "hello", Timeout: TimeoutConfig{Chunk: 20 * time.Millisecond},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range result.Stream {
+	}
+	if !result.Aborted || !strings.Contains(result.AbortReason, "chunk timeout") {
+		t.Fatalf("expected inter-content chunk timeout, aborted=%v reason=%q", result.Aborted, result.AbortReason)
+	}
+}
+
+func TestStreamTextPreservesMetadataFromEmptyTextDelta(t *testing.T) {
+	metadata := ProviderMetadata{"test": map[string]any{"signature": "sig-1"}}
+	model := &sequenceModel{stream: func(LanguageModelCallOptions) (*LanguageModelStreamResult, error) {
+		stream := make(chan StreamPart, 3)
+		stream <- StreamPart{Type: "text-delta", TextDelta: "hello"}
+		stream <- StreamPart{Type: "text-delta", ProviderMetadata: metadata}
+		stream <- StreamPart{Type: "finish", FinishReason: FinishReason{Unified: FinishStop}}
+		close(stream)
+		return &LanguageModelStreamResult{Stream: stream}, nil
+	}}
+	result, err := StreamText(context.Background(), StreamTextOptions{GenerateTextOptions: GenerateTextOptions{Model: model, Prompt: "hello"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	metadataDeltaSeen := false
+	for part := range result.Stream {
+		if part.Type == "text-delta" && part.TextDelta == "" && reflect.DeepEqual(part.ProviderMetadata, metadata) {
+			metadataDeltaSeen = true
+		}
+	}
+	if !metadataDeltaSeen {
+		t.Fatal("metadata-only text delta was not forwarded")
+	}
+	if len(result.Steps) != 1 || len(result.Steps[0].Content) != 1 {
+		t.Fatalf("unexpected accumulated content: %#v", result.Steps)
+	}
+	text, ok := result.Steps[0].Content[0].(TextPart)
+	if !ok || text.Text != "hello" || !reflect.DeepEqual(text.ProviderMetadata, metadata) {
+		t.Fatalf("metadata-only delta was not accumulated: %#v", result.Steps[0].Content)
 	}
 }
 

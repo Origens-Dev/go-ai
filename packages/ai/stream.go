@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/holbrookab/go-ai/internal/retry"
+	"github.com/Origens-Dev/go-ai/internal/retry"
 )
 
 var (
@@ -516,6 +516,13 @@ func consumeStreamStep(ctx context.Context, opts StreamTextOptions, streamResult
 	var lastPartialOutput any
 	var haveLastPartialOutput bool
 	var publishedElements int
+	var contentTimer *time.Timer
+	var contentTimerC <-chan time.Time
+	if opts.Timeout.FirstChunk > 0 {
+		contentTimer = time.NewTimer(opts.Timeout.FirstChunk)
+		contentTimerC = contentTimer.C
+	}
+	defer func() { stopTimer(contentTimer) }()
 
 	for {
 		var part StreamPart
@@ -525,6 +532,17 @@ func consumeStreamStep(ctx context.Context, opts StreamTextOptions, streamResult
 			acc.aborted = true
 			acc.abortErr = ctx.Err()
 			acc.abortReason = abortReason(ctx.Err())
+			return acc
+		case <-contentTimerC:
+			label := "chunk"
+			duration := opts.Timeout.Chunk
+			if !acc.outputSeen {
+				label = "first chunk"
+				duration = opts.Timeout.FirstChunk
+			}
+			acc.aborted = true
+			acc.abortErr = fmt.Errorf("%s timeout after %s: %w", label, duration, context.DeadlineExceeded)
+			acc.abortReason = acc.abortErr.Error()
 			return acc
 		case part, ok = <-streamResult.Stream:
 			if !ok {
@@ -542,7 +560,21 @@ func consumeStreamStep(ctx context.Context, opts StreamTextOptions, streamResult
 		if part.Type == "" {
 			part.Type = inferStreamPartType(part)
 		}
+		isOutput := isGeneratedOutputChunk(part)
 		acc.recordOutputChunk(started, part)
+		if isOutput && opts.Timeout.Chunk > 0 {
+			if contentTimer == nil {
+				contentTimer = time.NewTimer(opts.Timeout.Chunk)
+			} else {
+				stopTimer(contentTimer)
+				contentTimer.Reset(opts.Timeout.Chunk)
+			}
+			contentTimerC = contentTimer.C
+		} else if isOutput && contentTimer != nil {
+			stopTimer(contentTimer)
+			contentTimer = nil
+			contentTimerC = nil
+		}
 		switch part.Type {
 		case "error":
 			acc.err = part.Err
@@ -731,7 +763,7 @@ func withStepScope(part StreamPart, scope streamStepScope) StreamPart {
 }
 
 func appendTextDelta(parts []Part, delta string, metadata ProviderMetadata) []Part {
-	if delta == "" {
+	if delta == "" && len(metadata) == 0 {
 		return parts
 	}
 	if len(parts) > 0 {
@@ -743,6 +775,16 @@ func appendTextDelta(parts []Part, delta string, metadata ProviderMetadata) []Pa
 		}
 	}
 	return append(parts, TextPart{Text: delta, ProviderMetadata: metadata})
+}
+
+func stopTimer(timer *time.Timer) {
+	if timer == nil || timer.Stop() {
+		return
+	}
+	select {
+	case <-timer.C:
+	default:
+	}
 }
 
 func appendReasoningDelta(parts []Part, delta string, metadata ProviderMetadata) []Part {

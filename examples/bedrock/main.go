@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/holbrookab/go-ai/packages/ai"
-	"github.com/holbrookab/go-ai/packages/bedrock"
+	"github.com/Origens-Dev/go-ai/packages/ai"
+	"github.com/Origens-Dev/go-ai/packages/bedrock"
 )
 
 func main() {
