@@ -6,7 +6,7 @@ on:
       tag:
         description: Release tag in the Origens v0.1 lineage
         required: true
-        default: v0.1.0-alpha.1
+        default: v0.1.0-alpha.2
         type: string
       prerelease:
         description: Mark the GitHub release as a prerelease
@@ -19,7 +19,7 @@ permissions:
 
 jobs:
   release:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v5
         with:

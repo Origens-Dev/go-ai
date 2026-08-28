@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-const Version = "0.1.0-alpha.1"
+const Version = "0.1.0-alpha.2"
 
 type ProviderOptions map[string]any
 type ProviderMetadata map[string]any
