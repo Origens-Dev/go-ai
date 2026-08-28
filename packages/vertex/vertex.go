@@ -16,6 +16,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -24,8 +25,16 @@ import (
 )
 
 const (
-	expressBaseURL = "https://aiplatform.googleapis.com/v1/publishers/google"
-	oauthScope     = "https://www.googleapis.com/auth/cloud-platform"
+	expressBaseURL      = "https://aiplatform.googleapis.com/v1/publishers/google"
+	generativeAIBaseURL = "https://generativelanguage.googleapis.com/v1beta"
+	oauthScope          = "https://www.googleapis.com/auth/cloud-platform"
+)
+
+type backend uint8
+
+const (
+	vertexBackend backend = iota
+	generativeAIBackend
 )
 
 type TokenSource interface {
@@ -49,10 +58,37 @@ type Settings struct {
 
 type Provider struct {
 	settings Settings
+	backend  backend
 }
 
 func New(settings Settings) *Provider {
-	return &Provider{settings: settings}
+	return &Provider{settings: settings, backend: vertexBackend}
+}
+
+// GenerativeAISettings configures the Gemini Developer API implementation
+// shared with packages/google. Most users should import packages/google rather
+// than constructing this implementation from the Vertex package.
+type GenerativeAISettings struct {
+	APIKey     string
+	BaseURL    string
+	Headers    map[string]string
+	Client     httputil.Doer
+	GenerateID func() string
+}
+
+// NewGenerativeAI constructs the shared Gemini Developer API implementation.
+// Most users should use google.New from packages/google.
+func NewGenerativeAI(settings GenerativeAISettings) *Provider {
+	return &Provider{
+		settings: Settings{
+			APIKey:     settings.APIKey,
+			BaseURL:    settings.BaseURL,
+			Headers:    settings.Headers,
+			Client:     settings.Client,
+			GenerateID: settings.GenerateID,
+		},
+		backend: generativeAIBackend,
+	}
 }
 
 func (p *Provider) LanguageModel(modelID string) ai.LanguageModel {
@@ -64,10 +100,37 @@ type LanguageModel struct {
 	provider *Provider
 }
 
-func (m *LanguageModel) Provider() string { return "google.vertex.chat" }
-func (m *LanguageModel) ModelID() string  { return m.modelID }
+func (m *LanguageModel) Provider() string {
+	if m.provider.backend == generativeAIBackend {
+		return "google.generative-ai"
+	}
+	return "google.vertex.chat"
+}
+func (m *LanguageModel) ModelID() string { return m.modelID }
 func (m *LanguageModel) SupportedURLs(context.Context) (map[string][]string, error) {
-	return map[string][]string{"*": {"^https?://.*$", "^gs://.*$"}}, nil
+	if m.provider.backend == generativeAIBackend {
+		base := strings.TrimRight(m.baseURL(), "/")
+		out := map[string][]string{
+			"*": {
+				"/^https://generativelanguage\\.googleapis\\.com/v1beta/files/.*$/",
+				"/^" + regexp.QuoteMeta(base) + "/files/.*$/",
+				"/^https://(?:www\\.)?youtube\\.com/watch\\?v=[\\w-]+(?:&[\\w=&.-]*)?$/",
+				"/^https://youtu\\.be/[\\w-]+(?:\\?[\\w=&.-]*)?$/",
+			},
+		}
+		if supportsExternalFileURLs(m.modelID) {
+			for _, mediaType := range []string{
+				"text/html", "text/css", "text/plain", "text/xml", "text/csv", "text/rtf", "text/javascript",
+				"application/json", "application/pdf",
+				"image/bmp", "image/jpeg", "image/png", "image/webp",
+				"video/mp4", "video/mpeg", "video/quicktime", "video/avi", "video/x-flv", "video/mpg", "video/webm", "video/wmv", "video/3gpp",
+			} {
+				out[mediaType] = []string{"/^https://.*$/"}
+			}
+		}
+		return out, nil
+	}
+	return map[string][]string{"*": {"/^https?://.*$/", "/^gs://.*$/"}}, nil
 }
 
 func (m *LanguageModel) DoGenerate(ctx context.Context, opts ai.LanguageModelCallOptions) (*ai.LanguageModelGenerateResult, error) {
@@ -86,16 +149,25 @@ func (m *LanguageModel) DoGenerate(ctx context.Context, opts ai.LanguageModelCal
 	}
 	content := m.parseContent(response)
 	finishRaw := ""
+	promptBlockReason := promptBlockReason(response.PromptFeedback)
 	var metadata ai.ProviderMetadata
 	var usage ai.Usage
 	if len(response.Candidates) > 0 {
 		finishRaw = response.Candidates[0].FinishReason
 		metadata = m.metadata(response)
 		usage = convertUsage(response.UsageMetadata)
+	} else if promptBlockReason != "" {
+		finishRaw = promptBlockReason
+		metadata = m.metadata(response)
+		usage = convertUsage(response.UsageMetadata)
+	}
+	finishUnified := mapFinish(finishRaw, hasClientToolCall(content))
+	if len(response.Candidates) == 0 && promptBlockReason != "" {
+		finishUnified = ai.FinishContentFilter
 	}
 	return &ai.LanguageModelGenerateResult{
 		Content:          content,
-		FinishReason:     ai.FinishReason{Unified: mapFinish(finishRaw, hasClientToolCall(content)), Raw: finishRaw},
+		FinishReason:     ai.FinishReason{Unified: finishUnified, Raw: finishRaw},
 		Usage:            usage,
 		Warnings:         warnings,
 		ProviderMetadata: metadata,
@@ -129,7 +201,7 @@ func (m *LanguageModel) DoStream(ctx context.Context, opts ai.LanguageModelCallO
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		defer resp.Body.Close()
 		data, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("vertex stream failed: status %d: %s", resp.StatusCode, string(data))
+		return nil, fmt.Errorf("%s stream failed: status %d: %s", m.errorName(), resp.StatusCode, string(data))
 	}
 	out := make(chan ai.StreamPart)
 	go func() {
@@ -146,7 +218,12 @@ func (m *LanguageModel) DoStream(ctx context.Context, opts ai.LanguageModelCallO
 }
 
 func (m *LanguageModel) buildBody(opts ai.LanguageModelCallOptions, streaming bool) (map[string]any, []ai.Warning) {
-	contents, systemInstruction := googleMessages(opts.Prompt, strings.HasPrefix(strings.ToLower(m.modelID), "gemma-"))
+	var warnings []ai.Warning
+	contents, systemInstruction := googleMessages(
+		opts.Prompt,
+		strings.HasPrefix(strings.ToLower(m.modelID), "gemma-"),
+		m.provider.backend == generativeAIBackend,
+	)
 	generation := map[string]any{}
 	if opts.MaxOutputTokens != nil {
 		generation["maxOutputTokens"] = *opts.MaxOutputTokens
@@ -178,7 +255,17 @@ func (m *LanguageModel) buildBody(opts ai.LanguageModelCallOptions, streaming bo
 			generation["responseSchema"] = opts.ResponseFormat.Schema
 		}
 	}
-	vertexOptions := providerOptions(opts.ProviderOptions)
+	vertexOptions := m.providerOptions(opts.ProviderOptions)
+	if m.provider.backend == generativeAIBackend && isGemini25Model(m.modelID) {
+		if opts.FrequencyPenalty != nil {
+			delete(generation, "frequencyPenalty")
+			warnings = append(warnings, ai.Warning{Type: "unsupported", Feature: "frequencyPenalty"})
+		}
+		if opts.PresencePenalty != nil {
+			delete(generation, "presencePenalty")
+			warnings = append(warnings, ai.Warning{Type: "unsupported", Feature: "presencePenalty"})
+		}
+	}
 	for _, key := range []string{"responseModalities", "thinkingConfig", "mediaResolution", "imageConfig", "audioTimestamp"} {
 		if v, ok := vertexOptions[key]; ok {
 			generation[key] = v
@@ -197,18 +284,22 @@ func (m *LanguageModel) buildBody(opts ai.LanguageModelCallOptions, streaming bo
 		}
 	}
 	if tier, ok := vertexOptions["serviceTier"].(string); ok {
-		body["serviceTier"] = mapServiceTier(tier)
+		if m.provider.backend == generativeAIBackend {
+			body["serviceTier"] = tier
+		} else {
+			body["serviceTier"] = mapServiceTier(tier)
+		}
 	}
 	if len(opts.Tools) > 0 {
 		body["tools"] = googleTools(opts.Tools)
-		if cfg := googleToolConfig(opts.Tools, opts.ToolChoice, streaming, vertexOptions); cfg != nil {
+		if cfg := googleToolConfig(opts.Tools, opts.ToolChoice, streaming && m.provider.backend == vertexBackend, vertexOptions); cfg != nil {
 			body["toolConfig"] = cfg
 		}
 	}
-	return body, nil
+	return body, warnings
 }
 
-func googleMessages(messages []ai.Message, isGemma bool) ([]map[string]any, []map[string]string) {
+func googleMessages(messages []ai.Message, isGemma bool, includeFunctionCallIDs bool) ([]map[string]any, []map[string]string) {
 	var system []map[string]string
 	var contents []map[string]any
 	var pendingSystem string
@@ -233,12 +324,12 @@ func googleMessages(messages []ai.Message, isGemma bool) ([]map[string]any, []ma
 				contents = append(contents, map[string]any{"role": "user", "parts": parts})
 			}
 		case ai.RoleAssistant:
-			parts := googleAssistantParts(messageContent(message))
+			parts := googleAssistantParts(messageContent(message), includeFunctionCallIDs)
 			if len(parts) > 0 {
 				contents = append(contents, map[string]any{"role": "model", "parts": parts})
 			}
 		case ai.RoleTool:
-			parts := googleToolResultParts(messageContent(message))
+			parts := googleToolResultParts(messageContent(message), includeFunctionCallIDs)
 			if len(parts) > 0 {
 				contents = append(contents, map[string]any{"role": "user", "parts": parts})
 			}
@@ -276,7 +367,7 @@ func googleUserParts(parts []ai.Part) []map[string]any {
 	return out
 }
 
-func googleAssistantParts(parts []ai.Part) []map[string]any {
+func googleAssistantParts(parts []ai.Part, includeFunctionCallIDs bool) []map[string]any {
 	var out []map[string]any
 	for _, part := range parts {
 		switch p := part.(type) {
@@ -295,17 +386,25 @@ func googleAssistantParts(parts []ai.Part) []map[string]any {
 				out = append(out, withThoughtSignature(map[string]any{"inlineData": map[string]any{"mimeType": mediaType(p.MediaType, "application/octet-stream"), "data": base64.StdEncoding.EncodeToString(p.Data.Data)}}, p.ProviderMetadata, p.ProviderOptions))
 			}
 		case ai.ToolCallPart:
-			out = append(out, withThoughtSignature(map[string]any{"functionCall": map[string]any{"name": p.ToolName, "args": p.Input}}, p.ProviderMetadata, p.ProviderOptions))
+			call := map[string]any{"name": p.ToolName, "args": p.Input}
+			if includeFunctionCallIDs && p.ToolCallID != "" {
+				call["id"] = p.ToolCallID
+			}
+			out = append(out, withThoughtSignature(map[string]any{"functionCall": call}, p.ProviderMetadata, p.ProviderOptions))
 		}
 	}
 	return out
 }
 
-func googleToolResultParts(parts []ai.Part) []map[string]any {
+func googleToolResultParts(parts []ai.Part, includeFunctionCallIDs bool) []map[string]any {
 	var out []map[string]any
 	for _, part := range parts {
 		if p, ok := part.(ai.ToolResultPart); ok {
-			out = append(out, map[string]any{"functionResponse": map[string]any{"name": p.ToolName, "response": map[string]any{"name": p.ToolName, "content": toolOutputText(p.Output)}}})
+			response := map[string]any{"name": p.ToolName, "response": map[string]any{"name": p.ToolName, "content": toolOutputText(p.Output)}}
+			if includeFunctionCallIDs && p.ToolCallID != "" {
+				response["id"] = p.ToolCallID
+			}
+			out = append(out, map[string]any{"functionResponse": response})
 		}
 	}
 	return out
@@ -383,16 +482,20 @@ func (m *LanguageModel) parseContent(response generateContentResponse) []ai.Part
 	for _, part := range response.Candidates[0].Content.Parts {
 		switch {
 		case part.Text != "":
-			metadata := thoughtMetadata(part.ThoughtSignature)
+			metadata := m.thoughtMetadata(part.ThoughtSignature)
 			if part.Thought {
 				out = append(out, ai.ReasoningPart{Text: part.Text, ProviderMetadata: metadata})
 			} else {
 				out = append(out, ai.TextPart{Text: part.Text, ProviderMetadata: metadata, ProviderOptions: nil})
 			}
 		case part.FunctionCall != nil:
-			out = append(out, ai.ToolCallPart{ToolCallID: m.generateID(), ToolName: part.FunctionCall.Name, InputRaw: mustJSON(part.FunctionCall.Args), ProviderMetadata: thoughtMetadata(part.ThoughtSignature)})
+			id := strings.TrimSpace(part.FunctionCall.ID)
+			if id == "" {
+				id = m.generateID()
+			}
+			out = append(out, ai.ToolCallPart{ToolCallID: id, ToolName: part.FunctionCall.Name, InputRaw: mustJSON(part.FunctionCall.Args), ProviderMetadata: m.thoughtMetadata(part.ThoughtSignature)})
 		case part.InlineData != nil:
-			metadata := thoughtMetadata(part.ThoughtSignature)
+			metadata := m.thoughtMetadata(part.ThoughtSignature)
 			file := ai.FilePart{MediaType: part.InlineData.MimeType, Data: ai.FileData{Type: "data", Data: []byte(part.InlineData.Data)}, ProviderMetadata: metadata, ProviderOptions: nil}
 			if part.Thought {
 				out = append(out, ai.ReasoningFilePart{MediaType: file.MediaType, Data: file.Data, ProviderMetadata: metadata})
@@ -414,8 +517,10 @@ func (m *LanguageModel) parseContent(response generateContentResponse) []ai.Part
 
 func (m *LanguageModel) scanSSE(r io.Reader, out chan<- ai.StreamPart) {
 	scanner := bufio.NewScanner(r)
+	scanner.Buffer(make([]byte, 64*1024), 16*1024*1024)
 	finish := ai.FinishReason{Unified: ai.FinishOther}
 	var usage ai.Usage
+	var providerMetadata ai.ProviderMetadata
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" || !strings.HasPrefix(line, "data:") {
@@ -434,7 +539,13 @@ func (m *LanguageModel) scanSSE(r io.Reader, out chan<- ai.StreamPart) {
 		if chunk.UsageMetadata.PromptTokenCount != 0 || chunk.UsageMetadata.CandidatesTokenCount != 0 {
 			usage = convertUsage(chunk.UsageMetadata)
 		}
+		if len(chunk.Candidates) > 0 || len(chunk.PromptFeedback) > 0 || chunk.UsageMetadata.TotalTokenCount != 0 {
+			providerMetadata = m.metadata(chunk)
+		}
 		if len(chunk.Candidates) == 0 {
+			if reason := promptBlockReason(chunk.PromptFeedback); reason != "" {
+				finish = ai.FinishReason{Unified: ai.FinishContentFilter, Raw: reason}
+			}
 			continue
 		}
 		c := chunk.Candidates[0]
@@ -443,7 +554,7 @@ func (m *LanguageModel) scanSSE(r io.Reader, out chan<- ai.StreamPart) {
 		}
 		for _, part := range c.Content.Parts {
 			if part.Text != "" {
-				metadata := thoughtMetadata(part.ThoughtSignature)
+				metadata := m.thoughtMetadata(part.ThoughtSignature)
 				if part.Thought {
 					out <- ai.StreamPart{Type: "reasoning-delta", ReasoningDelta: part.Text, ProviderMetadata: metadata}
 				} else {
@@ -452,15 +563,18 @@ func (m *LanguageModel) scanSSE(r io.Reader, out chan<- ai.StreamPart) {
 			}
 			if part.FunctionCall != nil && part.FunctionCall.Name != "" {
 				input := mustJSON(part.FunctionCall.Args)
-				id := m.generateID()
-				metadata := thoughtMetadata(part.ThoughtSignature)
+				id := strings.TrimSpace(part.FunctionCall.ID)
+				if id == "" {
+					id = m.generateID()
+				}
+				metadata := m.thoughtMetadata(part.ThoughtSignature)
 				out <- ai.StreamPart{Type: "tool-input-start", ToolCallID: id, ToolName: part.FunctionCall.Name, ProviderMetadata: metadata}
 				out <- ai.StreamPart{Type: "tool-input-delta", ToolCallID: id, ToolName: part.FunctionCall.Name, ToolInputDelta: input, ProviderMetadata: metadata}
 				out <- ai.StreamPart{Type: "tool-input-end", ToolCallID: id, ToolName: part.FunctionCall.Name, ToolInput: input, ProviderMetadata: metadata}
 				out <- ai.StreamPart{Type: "tool-call", ToolCallID: id, ToolName: part.FunctionCall.Name, ToolInput: input, ProviderMetadata: metadata}
 			}
 			if part.InlineData != nil {
-				metadata := thoughtMetadata(part.ThoughtSignature)
+				metadata := m.thoughtMetadata(part.ThoughtSignature)
 				if part.Thought {
 					out <- ai.StreamPart{Type: "file", Content: ai.ReasoningFilePart{MediaType: part.InlineData.MimeType, Data: ai.FileData{Type: "data", Data: []byte(part.InlineData.Data)}, ProviderMetadata: metadata}, ProviderMetadata: metadata}
 				} else {
@@ -475,7 +589,7 @@ func (m *LanguageModel) scanSSE(r io.Reader, out chan<- ai.StreamPart) {
 	if err := scanner.Err(); err != nil {
 		out <- ai.StreamPart{Type: "error", Err: err}
 	}
-	out <- ai.StreamPart{Type: "finish", FinishReason: finish, Usage: usage}
+	out <- ai.StreamPart{Type: "finish", FinishReason: finish, Usage: usage, ProviderMetadata: providerMetadata}
 }
 
 func (m *LanguageModel) url(suffix string) string {
@@ -491,6 +605,9 @@ func (m *LanguageModel) baseURL() string {
 	settings := m.provider.settings
 	if settings.BaseURL != "" {
 		return settings.BaseURL
+	}
+	if m.provider.backend == generativeAIBackend {
+		return generativeAIBaseURL
 	}
 	if m.apiKey() != "" {
 		return expressBaseURL
@@ -516,13 +633,16 @@ func (m *LanguageModel) headers(ctx context.Context, headers map[string]string) 
 		out[k] = v
 	}
 	if out["User-Agent"] == "" {
-		out["User-Agent"] = "ai-sdk/google-vertex/" + ai.Version
+		out["User-Agent"] = m.userAgent()
 	} else {
-		out["User-Agent"] += " ai-sdk/google-vertex/" + ai.Version
+		out["User-Agent"] += " " + m.userAgent()
 	}
 	if apiKey := m.apiKey(); apiKey != "" {
 		out["x-goog-api-key"] = apiKey
 		return out, nil
+	}
+	if m.provider.backend == generativeAIBackend {
+		return nil, fmt.Errorf("google generative AI API key is required; set Settings.APIKey or GOOGLE_GENERATIVE_AI_API_KEY")
 	}
 	source := m.provider.settings.TokenSource
 	if source == nil {
@@ -540,7 +660,24 @@ func (m *LanguageModel) apiKey() string {
 	if strings.TrimSpace(m.provider.settings.APIKey) != "" {
 		return strings.TrimSpace(m.provider.settings.APIKey)
 	}
+	if m.provider.backend == generativeAIBackend {
+		return strings.TrimSpace(os.Getenv("GOOGLE_GENERATIVE_AI_API_KEY"))
+	}
 	return strings.TrimSpace(os.Getenv("GOOGLE_VERTEX_API_KEY"))
+}
+
+func (m *LanguageModel) userAgent() string {
+	if m.provider.backend == generativeAIBackend {
+		return "ai-sdk/google/" + ai.Version
+	}
+	return "ai-sdk/google-vertex/" + ai.Version
+}
+
+func (m *LanguageModel) errorName() string {
+	if m.provider.backend == generativeAIBackend {
+		return "google generative AI"
+	}
+	return "vertex"
 }
 
 func (m *LanguageModel) generateID() string {
@@ -550,13 +687,40 @@ func (m *LanguageModel) generateID() string {
 	return fmt.Sprintf("call-%d", time.Now().UnixNano())
 }
 
-func providerOptions(options ai.ProviderOptions) map[string]any {
+func (m *LanguageModel) providerOptions(options ai.ProviderOptions) map[string]any {
+	if m.provider.backend == generativeAIBackend {
+		if v, ok := options["google"].(map[string]any); ok {
+			return v
+		}
+		return map[string]any{}
+	}
 	for _, key := range []string{"googleVertex", "vertex", "google"} {
 		if v, ok := options[key].(map[string]any); ok {
 			return v
 		}
 	}
 	return map[string]any{}
+}
+
+func isGemini25Model(modelID string) bool {
+	path := strings.ToLower(modelID)
+	if slash := strings.LastIndex(path, "/"); slash >= 0 {
+		path = path[slash+1:]
+	}
+	return strings.HasPrefix(path, "gemini-2.5-") || path == "gemini-2.5"
+}
+
+func supportsExternalFileURLs(modelID string) bool {
+	path := strings.ToLower(modelID)
+	if slash := strings.LastIndex(path, "/"); slash >= 0 {
+		path = path[slash+1:]
+	}
+	return strings.HasPrefix(path, "gemini-") && !strings.HasPrefix(path, "gemini-2.0")
+}
+
+func promptBlockReason(feedback map[string]any) string {
+	reason, _ := feedback["blockReason"].(string)
+	return reason
 }
 
 func mapServiceTier(tier string) string {
@@ -614,11 +778,14 @@ func hasClientToolCall(parts []ai.Part) bool {
 	return false
 }
 
-func thoughtMetadata(signature string) ai.ProviderMetadata {
+func (m *LanguageModel) thoughtMetadata(signature string) ai.ProviderMetadata {
 	if signature == "" {
 		return nil
 	}
 	payload := map[string]any{"thoughtSignature": signature}
+	if m.provider.backend == generativeAIBackend {
+		return ai.ProviderMetadata{"google": payload}
+	}
 	return ai.ProviderMetadata{"googleVertex": payload, "vertex": payload, "google": payload}
 }
 
@@ -670,6 +837,11 @@ func (m *LanguageModel) metadata(response generateContentResponse) ai.ProviderMe
 	}
 	if response.ServiceTier != "" {
 		payload["serviceTier"] = response.ServiceTier
+	} else if response.UsageMetadata.ServiceTier != "" {
+		payload["serviceTier"] = response.UsageMetadata.ServiceTier
+	}
+	if m.provider.backend == generativeAIBackend {
+		return ai.ProviderMetadata{"google": payload}
 	}
 	return ai.ProviderMetadata{"googleVertex": payload, "vertex": payload}
 }
@@ -735,10 +907,10 @@ func responseHeaders(headers http.Header) map[string]string {
 }
 
 type generateContentResponse struct {
-	Candidates     []candidate   `json:"candidates"`
-	UsageMetadata  usageMetadata `json:"usageMetadata"`
-	PromptFeedback any           `json:"promptFeedback"`
-	ServiceTier    string        `json:"serviceTier"`
+	Candidates     []candidate    `json:"candidates"`
+	UsageMetadata  usageMetadata  `json:"usageMetadata"`
+	PromptFeedback map[string]any `json:"promptFeedback"`
+	ServiceTier    string         `json:"serviceTier"`
 }
 
 type candidate struct {
@@ -766,6 +938,7 @@ type googlePart struct {
 }
 
 type functionCall struct {
+	ID   string         `json:"id"`
 	Name string         `json:"name"`
 	Args map[string]any `json:"args"`
 }
@@ -776,10 +949,18 @@ type inlineData struct {
 }
 
 type usageMetadata struct {
-	PromptTokenCount        int `json:"promptTokenCount"`
-	CandidatesTokenCount    int `json:"candidatesTokenCount"`
-	ThoughtsTokenCount      int `json:"thoughtsTokenCount"`
-	CachedContentTokenCount int `json:"cachedContentTokenCount"`
+	PromptTokenCount           int    `json:"promptTokenCount"`
+	CandidatesTokenCount       int    `json:"candidatesTokenCount"`
+	ThoughtsTokenCount         int    `json:"thoughtsTokenCount"`
+	CachedContentTokenCount    int    `json:"cachedContentTokenCount"`
+	ToolUsePromptTokenCount    int    `json:"toolUsePromptTokenCount"`
+	TotalTokenCount            int    `json:"totalTokenCount"`
+	TrafficType                string `json:"trafficType"`
+	ServiceTier                string `json:"serviceTier"`
+	PromptTokensDetails        any    `json:"promptTokensDetails"`
+	CacheTokensDetails         any    `json:"cacheTokensDetails"`
+	CandidatesTokensDetails    any    `json:"candidatesTokensDetails"`
+	ToolUsePromptTokensDetails any    `json:"toolUsePromptTokensDetails"`
 }
 
 type groundingMetadata struct {

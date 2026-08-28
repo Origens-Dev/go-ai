@@ -12,6 +12,7 @@ Baseline: `ai@7.0.58`, upstream commit `63db19387ba71ec50820d146658ae720ab50c80b
 - Stable include controls for request/response bodies and raw chunks, with `IncludeRawChunks` kept as a compatibility alias.
 - `RefineToolInput`, tool metadata fields, canonical file tool-result fields, sandbox plumbing, no chunk telemetry event emission, and step performance fields.
 - Official Anthropic provider package under `packages/anthropic`.
+- Official Google Gemini Developer API language provider under `packages/google`.
 - Community connector boundary under `packages/community/`, with initial OpenRouter chat/embedding connector.
 - Bedrock replay updates for signed reasoning, cache-point preservation, and file tool-result content.
 - Canary.159 core stream helper parity: standalone text/UI stream conversion, `OnEnd` callback aliasing, stream abort telemetry, optional sandbox spawning, output chunk timing metrics, and `output-error` UI replay validation.

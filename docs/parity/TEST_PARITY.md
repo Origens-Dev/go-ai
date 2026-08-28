@@ -13,7 +13,7 @@ The earlier numeric file-count snapshot was tied to canary.152 and is no longer 
 | Area | Current gate |
 | --- | --- |
 | `packages/ai` P0/P1 core/runtime | Signed approvals and collision resistance, legacy approval verification, cancellation fencing, error redaction, SSRF regressions, deterministic tools, drift fingerprints, lifecycle aliases, semantic stream timeouts, metadata-only deltas, empty streams, streaming JSON extraction, and persisted UI-tool replay |
-| Existing provider packages | Existing Bedrock, Vertex, Anthropic, and community OpenRouter suites remain required |
+| Existing provider packages | Existing Bedrock, Google Gemini Developer API, Vertex, Anthropic, and community OpenRouter suites remain required |
 
 ## Scope Rules
 
@@ -32,6 +32,7 @@ The earlier numeric file-count snapshot was tied to canary.152 and is no longer 
 | `packages/bedrock` | Mantle, embedding, image, reranking subproviders | Not implemented in this repo's Bedrock connector. |
 | `packages/anthropic` | Files/skills APIs and full sandbox-backed native tool helpers | Explicitly out of first-pass provider scope; text, stream, tools, reasoning, and file tool results are covered. |
 | `packages/vertex` | Edge/MaaS/Anthropic/XAI/image/video/embedding subproviders | Not implemented in this repo's Vertex connector. |
+| `packages/google` | Batch, embeddings, files, image/video/speech/transcription/realtime, and Interactions APIs | Not implemented in the initial Gemini Developer API connector. |
 
 ## Current Evidence
 
@@ -42,6 +43,7 @@ Current Go test files added or expanded for parity:
 - `packages/ai/include_telemetry_parity_test.go`
 - `packages/ai/tool_security_test.go`
 - `packages/anthropic/anthropic_test.go`
+- `packages/google/google_test.go`
 - `packages/community/openrouter/openrouter_test.go`
 - `packages/bedrock/bedrock_test.go`
 

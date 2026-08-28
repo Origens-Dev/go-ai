@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.0-alpha.2 - 2026-08-28
+
+- Added a first-class Google Gemini Developer API connector for API keys from
+  Google AI Studio, with generate/stream support, Google-specific auth,
+  endpoints, provider metadata, tool-call IDs, service tiers, safety blocks,
+  and file URL handling while preserving the separate Vertex connector.
+- Moved CI and release validation to Origens' Blacksmith runner pool.
+
 ## 0.1.0-alpha.1 - 2026-08-09
 
 - Established the Origens-maintained module at `github.com/Origens-Dev/go-ai`,
